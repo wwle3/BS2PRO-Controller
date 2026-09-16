@@ -15,11 +15,6 @@ import (
 type Controller struct {
 	mu sync.Mutex
 
-	tempRing   []tempSample
-	ringHead   int
-	ringCount  int
-	windowSize int
-
 	zones              []zoneState
 	learnedMemory      *learnedMemoryStore
 	persistence        *learnedMemoryPersistence
@@ -31,19 +26,12 @@ type Controller struct {
 	emaSlowTemp        float64
 	emaTrend           float64
 	emaInitialized     bool
-	pendingSpikeBase   int
-	pendingSpikeDelta  int
-	pendingSpike       bool
 
 	config Config
 	logger types.Logger
 
 	activeZoneTemp  int
 	activeZoneValid bool
-}
-
-type tempSample struct {
-	temp int
 }
 
 type learnedState struct {
@@ -67,7 +55,6 @@ type zoneState struct {
 
 	probeActive bool
 	probeOffset int
-	probeUp     bool
 
 	verifying      bool
 	verifyStartAt  time.Time
@@ -78,7 +65,6 @@ type zoneState struct {
 
 	converged   bool
 	convergeTmp int
-	driftCount  int
 
 	trendUpCount   int
 	trendDownCount int
@@ -94,17 +80,12 @@ type zoneState struct {
 
 // Config 控制器配置
 type Config struct {
-	StableDelta            int
-	SpikeThreshold         int
-	Step                   int
-	WindowSize             int
-	ConvergeCount          int
-	VerifyDuration         time.Duration
-	VerifyMaxDelta         int
-	UpwardDriftThreshold   int
-	DownwardDriftThreshold int
-	DriftCount             int
-	AdjustCooldown         time.Duration
+	StableDelta    int
+	Step           int
+	ConvergeCount  int
+	VerifyDuration time.Duration
+	VerifyMaxDelta int
+	AdjustCooldown time.Duration
 
 	// 趋势与温度防抖配置
 	HighTempTrendConfirm   int
@@ -114,7 +95,6 @@ type Config struct {
 	TempEMASlowAlpha       float64
 	TrendEMAAlpha          float64
 	PreheatBand            int
-	PreheatClampStep       int
 	LearnRate              float64
 	LearnConfidenceGain    float64
 	LearnConfidenceDecay   float64
@@ -133,15 +113,10 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		StableDelta:            2,
-		SpikeThreshold:         15,
 		Step:                   100,
-		WindowSize:             5,
 		ConvergeCount:          3,
 		VerifyDuration:         30 * time.Second,
 		VerifyMaxDelta:         3,
-		UpwardDriftThreshold:   5,
-		DownwardDriftThreshold: -10,
-		DriftCount:             20,
 		AdjustCooldown:         5 * time.Second,
 		HighTempTrendConfirm:   2,
 		HighTempThreshold:      75,
@@ -150,7 +125,6 @@ func DefaultConfig() Config {
 		TempEMASlowAlpha:       0.12,
 		TrendEMAAlpha:          0.45,
 		PreheatBand:            5,
-		PreheatClampStep:       100,
 		LearnRate:              0.18,
 		LearnConfidenceGain:    0.12,
 		LearnConfidenceDecay:   0.08,
@@ -162,32 +136,17 @@ func DefaultConfig() Config {
 
 // New 创建偏移控制器
 func New(cfg Config, logger types.Logger) *Controller {
-	if cfg.WindowSize < 2 {
-		cfg.WindowSize = 5
-	}
 	if cfg.Step <= 0 {
 		cfg.Step = 100
 	}
 	if cfg.ConvergeCount <= 0 {
 		cfg.ConvergeCount = 3
 	}
-	if cfg.SpikeThreshold <= 0 {
-		cfg.SpikeThreshold = 15
-	}
 	if cfg.VerifyDuration <= 0 {
 		cfg.VerifyDuration = 30 * time.Second
 	}
 	if cfg.VerifyMaxDelta <= 0 {
 		cfg.VerifyMaxDelta = 3
-	}
-	if cfg.UpwardDriftThreshold <= 0 {
-		cfg.UpwardDriftThreshold = 5
-	}
-	if cfg.DownwardDriftThreshold >= 0 {
-		cfg.DownwardDriftThreshold = -10
-	}
-	if cfg.DriftCount <= 0 {
-		cfg.DriftCount = 20
 	}
 	if cfg.AdjustCooldown <= 0 {
 		cfg.AdjustCooldown = 5 * time.Second
@@ -213,9 +172,6 @@ func New(cfg Config, logger types.Logger) *Controller {
 	if cfg.PreheatBand <= 0 {
 		cfg.PreheatBand = 5
 	}
-	if cfg.PreheatClampStep <= 0 {
-		cfg.PreheatClampStep = cfg.Step
-	}
 	if cfg.LearnRate <= 0 || cfg.LearnRate >= 1 {
 		cfg.LearnRate = 0.18
 	}
@@ -235,11 +191,7 @@ func New(cfg Config, logger types.Logger) *Controller {
 
 	return &Controller{
 		config:            cfg,
-		windowSize:        cfg.WindowSize,
-		tempRing:          make([]tempSample, cfg.WindowSize),
 		learnedMemory:     newLearnedMemoryStore(),
-		ringHead:          0,
-		ringCount:         0,
 		lastTemp:          -1,
 		lastTempChangedAt: time.Now(),
 		logger:            logger,
@@ -301,35 +253,13 @@ func (c *Controller) Update(currentTemp int, fanCurve []types.FanCurvePoint, min
 	c.ensureZones(fanCurve)
 	now := time.Now()
 
-	// 记录温度真实变化时间，处理突发尖峰
-	skipSpikeDetect := c.processPendingSpike(currentTemp, fanCurve)
-	if c.lastTemp >= 0 {
-		if currentTemp != c.lastTemp {
-			c.lastTempChangedAt = now
-			if !skipSpikeDetect {
-				if d := currentTemp - c.lastTemp; iabs(d) >= c.config.SpikeThreshold {
-					c.pendingSpikeBase = c.lastTemp
-					c.pendingSpikeDelta = d
-					c.pendingSpike = true
-					if c.logger != nil {
-						c.logger.Debug("风扇偏移捕捉到候选瞬变", "state", "pending", "prev_temp", c.lastTemp, "current_temp", currentTemp, "delta", d)
-					}
-				}
-			}
-		}
-	} else {
+	firstSample := c.lastTemp < 0
+	if firstSample || currentTemp != c.lastTemp {
 		c.lastTempChangedAt = now
 	}
 	c.lastTemp = currentTemp
 	c.updateEMA(currentTemp)
-
-	// 维护温度历史窗口
-	c.tempRing[c.ringHead] = tempSample{temp: currentTemp}
-	c.ringHead = (c.ringHead + 1) % c.windowSize
-	if c.ringCount < c.windowSize {
-		c.ringCount++
-	}
-	if c.ringCount < 2 {
+	if firstSample {
 		return false
 	}
 
@@ -341,7 +271,6 @@ func (c *Controller) Update(currentTemp int, fanCurve []types.FanCurvePoint, min
 	// 弹性安全基准线
 	minSafeRPM := c.getMinSafeRPM(currentTemp, minRPM, maxRPM)
 	minSafeOffset := minSafeRPM - point.RPM
-	minSafeOffset = c.applyPreheatClamp(minSafeOffset, currentTemp)
 	// 极限温度以上不允许任何负偏移（降噪）
 	if currentTemp >= c.config.CriticalTemp {
 		minSafeOffset = 0
@@ -401,7 +330,6 @@ NORMAL_LOGIC:
 	switch {
 	case !defenseTriggered && !stagnationHandled:
 		if zone.converged {
-			c.checkDrift(zone, currentTemp, point)
 			break NORMAL_LOGIC
 		}
 
@@ -416,39 +344,26 @@ NORMAL_LOGIC:
 		// 处理试探的回调
 		if zone.probeActive {
 			zone.probeActive = false
-			if !zone.probeUp {
-				probeResponseThreshold := c.config.StableDelta
-				if zoneIdx == len(fanCurve)-1 {
-					probeResponseThreshold = c.config.StableDelta * 2
-				}
-				if trend >= probeResponseThreshold {
-					oldOff := point.Offset
-					point.Offset = zone.probeOffset
-					zone.lastAdjustAt = now
-					c.startVerifying(zone, currentTemp, now)
-					if c.logger != nil {
-						c.logger.Info("风扇偏移试探回退",
-							"zone_temp", point.Temperature,
-							"trend", trend,
-							"old_offset", oldOff,
-							"new_offset", point.Offset,
-							"reason", "probe_cooling_aborted")
-					}
-					break NORMAL_LOGIC
-				}
-				zone.stableCount = 0
-			} else {
+			probeResponseThreshold := c.config.StableDelta
+			if zoneIdx == len(fanCurve)-1 {
+				probeResponseThreshold = c.config.StableDelta * 2
+			}
+			if trend >= probeResponseThreshold {
+				oldOff := point.Offset
+				point.Offset = zone.probeOffset
 				zone.lastAdjustAt = now
 				c.startVerifying(zone, currentTemp, now)
 				if c.logger != nil {
-					c.logger.Info("风扇偏移试探上调进入验证",
+					c.logger.Info("风扇偏移试探回退",
 						"zone_temp", point.Temperature,
-						"offset", point.Offset,
 						"trend", trend,
-						"reason", "probe_heating_verify")
+						"old_offset", oldOff,
+						"new_offset", point.Offset,
+						"reason", "probe_cooling_aborted")
 				}
 				break NORMAL_LOGIC
 			}
+			zone.stableCount = 0
 		}
 
 		if !zone.lastAdjustAt.IsZero() && now.Sub(zone.lastAdjustAt) < c.config.AdjustCooldown {
@@ -615,31 +530,8 @@ NORMAL_LOGIC:
 					break NORMAL_LOGIC
 				}
 
-				if c.shouldProbeUp(point, currentTemp) {
-					zone.probeUp = true
-					probeUpStep := c.calculateProbeUpStep(currentTemp)
-					c.adjustZoneOffset(point, probeUpStep, minRPM, maxRPM)
-					if point.Offset == zone.probeOffset {
-						c.startVerifying(zone, currentTemp, now)
-					} else {
-						zone.probeActive = true
-						if c.logger != nil {
-							c.logger.Debug("风扇偏移稳定区试探上调",
-								"zone_temp", point.Temperature,
-								"old_offset", zone.probeOffset,
-								"new_offset", point.Offset,
-								"reason", "stable_zone_heat_pressure")
-						}
-					}
-					break NORMAL_LOGIC
-				}
-
-				zone.probeUp = false
 				if point.Offset <= minSafeOffset {
 					c.startVerifying(zone, currentTemp, now)
-					break NORMAL_LOGIC
-				}
-				if c.handleHighTempProtectionSettle(zone, point, currentTemp, minSafeOffset, minRPM, maxRPM) {
 					break NORMAL_LOGIC
 				}
 				probeDrop := c.calculateProbeDrop(point, currentTemp, stabilityCount, minSafeOffset)
@@ -781,11 +673,9 @@ func (c *Controller) setZoneEffectiveRPM(point *types.FanCurvePoint, targetRPM, 
 func (c *Controller) enterHighTempProtectionState(zone *zoneState, currentTemp int) {
 	zone.verifying = false
 	zone.probeActive = false
-	zone.probeUp = false
 	zone.converged = true
 	zone.convergeTmp = currentTemp
 	zone.stableCount = 0
-	zone.driftCount = 0
 	zone.verifyScoreSum = 0
 	zone.verifySamples = 0
 }
@@ -854,38 +744,6 @@ func (c *Controller) applyLearnedStateToZone(zone *zoneState, state learnedState
 	zone.learnFailures = state.failures
 }
 
-func (c *Controller) buildMigratedLearnedState(curveSignature string, point types.FanCurvePoint) (learnedState, learnedMemoryCandidate, bool) {
-	if c.learnedMemory == nil || point.Temperature >= c.config.HighTempBoostThreshold {
-		return learnedState{}, learnedMemoryCandidate{}, false
-	}
-	minConfidence := 0.35
-	candidate, ok := c.learnedMemory.BestAlternativeForZone(curveSignature, point.Temperature, point.RPM, minConfidence)
-	if !ok {
-		return learnedState{}, learnedMemoryCandidate{}, false
-	}
-	maxRPMGap := max(c.config.Step*8, 800)
-	if candidate.rpmGap > maxRPMGap {
-		return learnedState{}, learnedMemoryCandidate{}, false
-	}
-	similarity := 1 - float64(candidate.rpmGap)/float64(maxRPMGap)
-	if similarity <= 0 {
-		return learnedState{}, learnedMemoryCandidate{}, false
-	}
-	migratedOffset := int(math.Round(candidate.state.offset*similarity/float64(max(1, c.config.Step)))) * c.config.Step
-	if migratedOffset == 0 {
-		return learnedState{}, learnedMemoryCandidate{}, false
-	}
-	migratedConfidence := clampFloat(0.35+(candidate.state.confidence-0.35)*0.35*similarity, 0.35, 0.45)
-	state := learnedState{
-		offset:     float64(migratedOffset),
-		confidence: migratedConfidence,
-		successes:  0,
-		failures:   0,
-		hasSeed:    false,
-	}
-	return state, candidate, true
-}
-
 func (c *Controller) handleVerifying(zoneIdx int, fanCurve []types.FanCurvePoint, currentTemp, trend int, now time.Time, minRPM, maxRPM int) {
 	zone := &c.zones[zoneIdx]
 	point := &fanCurve[zoneIdx]
@@ -945,9 +803,7 @@ func (c *Controller) handleVerifying(zoneIdx int, fanCurve []types.FanCurvePoint
 		c.noteLearnFailure(point.Temperature, zone, "verify_score_too_high")
 		zone.verifying = false
 		zone.stableCount = 0
-		if !zone.probeUp {
-			point.Offset = zone.probeOffset
-		}
+		point.Offset = zone.probeOffset
 		if c.logger != nil {
 			c.logger.Debug("风扇偏移验证评分过高",
 				"zone_temp", point.Temperature,
@@ -962,7 +818,6 @@ func (c *Controller) handleVerifying(zoneIdx int, fanCurve []types.FanCurvePoint
 	zone.converged = true
 	zone.convergeTmp = currentTemp
 	zone.stableCount = 0
-	zone.driftCount = 0
 	c.noteLearnSuccess(point.Temperature, zone, point.Offset)
 	if c.logger != nil {
 		c.logger.Debug("风扇偏移完成收敛",
@@ -981,73 +836,6 @@ func (c *Controller) startVerifying(zone *zoneState, currentTemp int, now time.T
 	zone.verifyTempLow = currentTemp
 	zone.verifyScoreSum = 0
 	zone.verifySamples = 0
-}
-
-func (c *Controller) checkDrift(zone *zoneState, currentTemp int, point *types.FanCurvePoint) {
-	upwardThreshold := c.config.UpwardDriftThreshold
-	downwardThreshold := c.config.DownwardDriftThreshold
-	requiredCount := c.config.DriftCount
-
-	if point.Temperature < c.config.HighTempThreshold {
-		upwardThreshold += c.config.StableDelta
-		downwardThreshold -= c.config.StableDelta * 2
-	}
-
-	delta := currentTemp - zone.convergeTmp
-	if delta >= upwardThreshold || delta <= downwardThreshold {
-		zone.driftCount++
-		if zone.driftCount >= requiredCount {
-			zone.converged = false
-			zone.stableCount = 0
-			zone.driftCount = 0
-			zone.verifying = false
-			if c.logger != nil {
-				c.logger.Debug("风扇偏移因温度漂移退出收敛",
-					"zone_temp", point.Temperature,
-					"temp_delta", delta,
-					"upward_threshold", upwardThreshold,
-					"downward_threshold", downwardThreshold,
-					"required_count", requiredCount)
-			}
-		}
-	} else {
-		zone.driftCount = 0
-	}
-}
-
-func (c *Controller) handleSpike(currentTemp, tempDelta int, fanCurve []types.FanCurvePoint) {
-	prevTemp := currentTemp - tempDelta
-	lo := c.findZoneIndex(prevTemp, fanCurve)
-	hi := c.findZoneIndex(currentTemp, fanCurve)
-	if lo > hi {
-		lo, hi = hi, lo
-	}
-	if lo > 0 {
-		lo--
-	}
-	if hi < len(c.zones)-1 {
-		hi++
-	}
-	for i := lo; i <= hi; i++ {
-		z := &c.zones[i]
-		z.converged = false
-		z.verifying = false
-		z.probeActive = false
-		z.stableCount = 0
-		z.driftCount = 0
-		z.trendUpCount = 0
-		z.trendDownCount = 0
-	}
-	if c.logger != nil {
-		c.logger.Debug("风扇偏移检测到温度瞬变",
-			"prev_temp", prevTemp,
-			"current_temp", currentTemp,
-			"affected_zone_start", lo,
-			"affected_zone_end", hi)
-	}
-	c.tempRing[0] = tempSample{temp: prevTemp}
-	c.ringHead = 1 % c.windowSize
-	c.ringCount = 1
 }
 
 func (c *Controller) Reset() {
@@ -1070,24 +858,6 @@ func (c *Controller) ResetForCurve(fanCurve []types.FanCurvePoint, reason string
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.resetForCurveLocked(fanCurve, reason)
-}
-
-func (c *Controller) GetZoneStatus() []ZoneInfo {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	result := make([]ZoneInfo, len(c.zones))
-	for i, z := range c.zones {
-		result[i] = ZoneInfo{
-			Converged: z.converged,
-			Verifying: z.verifying,
-		}
-	}
-	return result
-}
-
-type ZoneInfo struct {
-	Converged bool `json:"converged"`
-	Verifying bool `json:"verifying"`
 }
 
 // GetCurrentZoneState 返回当前温度所在区间的偏移引擎状态（补偿中/回收中/稳定）
@@ -1132,30 +902,9 @@ func (c *Controller) updateEMA(currentTemp int) {
 
 func (c *Controller) getControlTrend() int {
 	if !c.emaInitialized {
-		return c.calculateTrend()
+		return 0
 	}
 	return int(math.Round(c.emaTrend))
-}
-
-func (c *Controller) processPendingSpike(currentTemp int, fanCurve []types.FanCurvePoint) bool {
-	if !c.pendingSpike {
-		return false
-	}
-	baseTemp := c.pendingSpikeBase
-	pendingDelta := c.pendingSpikeDelta
-	c.pendingSpikeBase = 0
-	c.pendingSpikeDelta = 0
-	c.pendingSpike = false
-	confirmedDelta := currentTemp - baseTemp
-	confirmed := sameSign(confirmedDelta, pendingDelta) && iabs(confirmedDelta) >= c.config.SpikeThreshold
-	if !confirmed {
-		if c.logger != nil {
-			c.logger.Debug("风扇偏移忽略候选瞬变", "state", "discarded", "base_temp", baseTemp, "current_temp", currentTemp, "delta", confirmedDelta)
-		}
-		return true
-	}
-	c.handleSpike(currentTemp, confirmedDelta, fanCurve)
-	return true
 }
 
 func (c *Controller) calculateProbeDrop(point *types.FanCurvePoint, currentTemp, stabilityCount, minSafeOffset int) int {
@@ -1324,29 +1073,6 @@ func (c *Controller) hasHighTempStagnationPressure(zone *zoneState, currentTemp 
 	return false
 }
 
-func (c *Controller) shouldProbeUp(point *types.FanCurvePoint, currentTemp int) bool {
-	if currentTemp >= c.config.HighTempBoostThreshold || point.Temperature >= c.config.HighTempBoostThreshold {
-		return false
-	}
-	if currentTemp >= c.config.CriticalTemp {
-		return false
-	}
-	if currentTemp < c.config.HighTempThreshold-c.config.PreheatBand {
-		return false
-	}
-	if point.Offset >= c.config.Step*6 {
-		return false
-	}
-	pressure := 0
-	if c.emaTrend >= float64(max(1, c.config.StableDelta)) {
-		pressure++
-	}
-	if currentTemp >= c.config.HighTempThreshold {
-		pressure++
-	}
-	return pressure >= 2
-}
-
 func (c *Controller) noteLearnSuccess(temp int, zone *zoneState, offset int) {
 	if temp >= c.config.HighTempBoostThreshold {
 		c.clearLearnState(zone, temp)
@@ -1449,17 +1175,6 @@ func (c *Controller) learnedMemoryCooldown(failStreak int) time.Duration {
 	return cooldown
 }
 
-func (c *Controller) calculateProbeUpStep(currentTemp int) int {
-	step := c.config.Step
-	if currentTemp >= c.config.HighTempBoostThreshold {
-		return step * 2
-	}
-	if currentTemp >= c.config.HighTempThreshold {
-		return int(math.Round(float64(step) * 1.5))
-	}
-	return step
-}
-
 func (c *Controller) getRequiredTrendConfirm(currentTemp, trend int) int {
 	if currentTemp >= c.config.CriticalTemp {
 		return 1
@@ -1521,47 +1236,13 @@ func (c *Controller) getVerifyScoreThreshold(currentTemp int) float64 {
 	}
 }
 
-func (c *Controller) applyPreheatClamp(minSafeOffset, currentTemp int) int {
-	if !c.emaInitialized || currentTemp >= c.config.HighTempThreshold {
-		return minSafeOffset
-	}
-	preheatStart := c.config.HighTempThreshold - c.config.PreheatBand
-	if preheatStart >= c.config.HighTempThreshold {
-		return minSafeOffset
-	}
-	controlTemp := math.Max(c.emaTemp, float64(currentTemp))
-	if controlTemp < float64(preheatStart) || c.emaTrend <= 0 {
-		return minSafeOffset
-	}
-	tempSpan := float64(max(1, c.config.HighTempThreshold-preheatStart))
-	tempProgress := clampFloat((controlTemp-float64(preheatStart))/tempSpan, 0, 1)
-	trendProgress := clampFloat(c.emaTrend/float64(max(1, c.config.StableDelta*2)), 0, 1)
-	clampStrength := 0.35 + tempProgress*0.9 + trendProgress*0.75
-	clamp := int(math.Round(float64(c.config.PreheatClampStep) * clampStrength))
-	if clamp <= 0 {
-		return minSafeOffset
-	}
-	if minSafeOffset < 0 {
-		minSafeOffset += clamp
-		if minSafeOffset > 0 {
-			return 0
-		}
-	}
-	return minSafeOffset
-}
-
 func (c *Controller) resetRuntimeStateLocked() {
-	c.ringHead = 0
-	c.ringCount = 0
 	c.lastTemp = -1
 	c.lastTempChangedAt = time.Now()
 	c.emaTemp = 0
 	c.emaSlowTemp = 0
 	c.emaTrend = 0
 	c.emaInitialized = false
-	c.pendingSpikeBase = 0
-	c.pendingSpikeDelta = 0
-	c.pendingSpike = false
 	c.activeZoneTemp = 0
 	c.activeZoneValid = false
 	c.lastCurveTemps = c.lastCurveTemps[:0]
@@ -1681,20 +1362,6 @@ func (c *Controller) ensureZones(fanCurve []types.FanCurvePoint) {
 		if p.Temperature < c.config.HighTempBoostThreshold {
 			if learned, ok := c.learnedMemory.Get(curveSignature, p.Temperature); ok {
 				c.applyLearnedStateToZone(&newZones[i], learned)
-			} else if migrated, source, ok := c.buildMigratedLearnedState(curveSignature, p); ok {
-				c.applyLearnedStateToZone(&newZones[i], migrated)
-				if c.logger != nil {
-					c.logger.Debug("风扇偏移短期迁移命中",
-						"zone_temp", p.Temperature,
-						"curve_signature", curveSignature,
-						"source_curve_signature", source.curveSignature,
-						"target_rpm", p.RPM,
-						"source_rpm", source.rpm,
-						"rpm_gap", source.rpmGap,
-						"source_offset", source.state.offset,
-						"migrated_offset", migrated.offset,
-						"migrated_confidence", migrated.confidence)
-				}
 			}
 		}
 	}
@@ -1776,25 +1443,11 @@ func (c *Controller) getMinSafeRPM(temp, minRPM, maxRPM int) int {
 	return safeRPM
 }
 
-// calculateTrend 基于温度历史窗口计算趋势。
-func (c *Controller) calculateTrend() int {
-	if c.ringCount < 2 {
-		return 0
-	}
-	oldestIdx := (c.ringHead + c.windowSize - c.ringCount) % c.windowSize
-	newestIdx := (c.ringHead - 1 + c.windowSize) % c.windowSize
-	return c.tempRing[newestIdx].temp - c.tempRing[oldestIdx].temp
-}
-
 func iabs(x int) int {
 	if x < 0 {
 		return -x
 	}
 	return x
-}
-
-func sameSign(a, b int) bool {
-	return (a > 0 && b > 0) || (a < 0 && b < 0)
 }
 
 func clampInt(v, low, high int) int {
