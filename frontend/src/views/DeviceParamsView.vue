@@ -85,15 +85,7 @@
           </div>
           <div class="flex items-center space-x-2">
             <span class="text-xs font-bold text-slate-700 dark:text-slate-300">当前激活:</span>
-            <span class="text-xs font-black uppercase"
-                  :class="config.customSpeedEnabled ? 'text-amber-500 dark:text-amber-400'
-                    : config.autoControl ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-blue-600 dark:text-blue-400'">
-              {{ config.customSpeedEnabled
-                  ? `自定义转速 ${config.customSpeedRPM} RPM`
-                  : config.autoControl ? '自动温控'
-                  : `${config.manualGear} - ${config.manualLevel}` }}
-            </span>
+            <span class="text-xs font-black text-blue-600 dark:text-blue-400">{{ maxGearText }}</span>
           </div>
         </div>
       </div>
@@ -150,9 +142,11 @@ import { apiService } from '../services/api'
 import { frontendLogger } from '../services/frontendLogger'
 import { types } from '../../wailsjs/go/models'
 
-interface Props { isDark: boolean; isConnected: boolean; config: types.AppConfig }
+interface Props { isDark: boolean; isConnected: boolean; config: types.AppConfig; fanData: types.FanData | null }
 const props = defineProps<Props>()
 const emit = defineEmits<{ 'config-change': [config: types.AppConfig] }>()
+
+const maxGearText = computed(() => props.isConnected ? (props.fanData?.maxGear || '—') : '—')
 
 const customSpeedInput = ref(String(props.config.customSpeedRPM || 2000))
 const loadingCustomSpeed = ref(false)

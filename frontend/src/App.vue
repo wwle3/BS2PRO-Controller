@@ -86,15 +86,13 @@
 
       <main class="flex-1 overflow-hidden bg-transparent flex flex-col">
         <DashboardView v-if="currentView === 'dashboard'"
-          :is-dark="isDark" :is-connected="isConnected"
+          :is-connected="isConnected"
           :device-model="deviceModel"
           :device-product-id="deviceProductId"
           :is-smart-freq="config.autoControl"
           :fan-data="fanData" :temperature="temperature"
           :config="config"
-          @update:is-smart-freq="handleAutoControlChange"
-          @disconnect="handleDisconnect"
-          @connect="handleConnect" />
+          @update:is-smart-freq="handleAutoControlChange" />
         <RGBLightView v-else-if="currentView === 'rgb-light'"
           :is-dark="isDark" :is-connected="isConnected"
           :saved-config="config.rgbConfig || null"
@@ -106,6 +104,7 @@
         <DeviceParamsView v-else-if="currentView === 'device-params'"
           :is-dark="isDark" :is-connected="isConnected"
           :config="config"
+          :fan-data="fanData"
           @config-change="handleConfigChange" />
         <SystemSettingsView v-else-if="currentView === 'system-settings'"
           :is-dark="isDark" :is-connected="isConnected"
@@ -483,12 +482,6 @@ const handleAutoControlChange = async (enabled: boolean) => {
 }
 const handleSetRGBMode = async (params: any): Promise<boolean> => {
   try { return await apiService.setRGBMode(params) } catch (e) { return false }
-}
-const handleDisconnect = async () => {
-  try { await apiService.disconnectDevice() } catch (e) { frontendLogger.error('设备', '断开设备失败', e) }
-}
-const handleConnect = async () => {
-  try { await apiService.connectDevice() } catch (e) { frontendLogger.error('设备', '连接设备失败', e) }
 }
 
 const minimizeWindow = () => {
