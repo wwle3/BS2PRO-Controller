@@ -123,7 +123,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { LayoutDashboard, Wind, Gauge, Zap, Settings, Info, Sun, Moon, ChevronRight, ChevronLeft, Minus, Square, X, Palette, LineChart, Sliders, Lightbulb } from 'lucide-vue-next'
+import { LayoutDashboard, Settings, Info, Sun, Moon, ChevronRight, ChevronLeft, Minus, Square, X, LineChart, Sliders, Lightbulb } from 'lucide-vue-next'
 import SidebarItem from './components/ui/SidebarItem.vue'
 import DashboardView from './views/DashboardView.vue'
 import RGBLightView from './views/RGBLightView.vue'

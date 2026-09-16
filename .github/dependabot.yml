@@ -27,7 +27,6 @@ updates:
       - dependency-name: vite
       - dependency-name: vue-tsc
       - dependency-name: "@vitejs/plugin-vue"
-      - dependency-name: "@vue/tsconfig"
       - dependency-name: tailwindcss
       - dependency-name: "@tailwindcss/vite"
       - dependency-name: lucide-vue-next
@@ -41,7 +40,6 @@ updates:
       prefix: chore
       include: scope
     allow:
-      - dependency-name: go.uber.org/zap
       - dependency-name: gopkg.in/natefinch/lumberjack.v2
       - dependency-name: github.com/Microsoft/go-winio
       - dependency-name: golang.org/x/sys
