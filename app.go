@@ -3,7 +3,6 @@ package main
 import (
 	"archive/zip"
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -267,7 +266,7 @@ func (a *App) scheduleRegisterGUIClientRole(reason string) {
 }
 
 func (a *App) ensureMonitorAgentReady() {
-	if err := a.startProcessSwitchMonitor(); err != nil {
+	if err := a.startMonitorAgent(); err != nil {
 		logError("启动 Monitor 失败", "error", err)
 	} else {
 		logInfo("已确保 Monitor 运行")
@@ -301,7 +300,6 @@ func (a *App) shouldEnsureMonitorAgent() bool {
 		"source", source,
 		"tray", cfg.TrayEnabled,
 		"notifications", cfg.NotificationsEnabled,
-		"process_switch", cfg.ProcessSwitchEnabled,
 		"hotkeys", hotkeysRequireMonitor(cfg),
 		"monitor_autostart", cfg.MonitorAutoStart,
 		"should_run", shouldRun)
@@ -357,7 +355,7 @@ func (a *App) syncMonitorAgentState() {
 		return
 	}
 	if processRunning {
-		if err := a.stopProcessSwitchMonitor(); err != nil {
+		if err := a.stopMonitorAgent(); err != nil {
 			logError("停止 Monitor 失败", "error", err)
 		} else {
 			logInfo("已停止 Monitor 代理进程")
@@ -378,7 +376,7 @@ func (a *App) ensureMonitorAgentRunningIfNeeded() {
 			return
 		}
 		logWarn("检测到 Monitor 不应运行，执行关闭")
-		if err := a.stopProcessSwitchMonitor(); err != nil {
+		if err := a.stopMonitorAgent(); err != nil {
 			logError("关闭残留 Monitor 失败", "error", err)
 		} else {
 			logInfo("已关闭残留 Monitor 代理进程")
@@ -692,20 +690,13 @@ func (a *App) UpdateConfig(cfg AppConfig) error {
 		}
 		return fmt.Errorf("服务返回为空")
 	}
-	if oldCfg.ProcessSwitchEnabled != cfg.ProcessSwitchEnabled {
-		a.syncProcessSwitchMonitor(cfg.ProcessSwitchEnabled)
-	}
 	if oldCfg.MonitorAutoStart != cfg.MonitorAutoStart {
 		a.syncMonitorAgentState()
 	}
 	return nil
 }
 
-func (a *App) syncProcessSwitchMonitor(_ bool) {
-	a.syncMonitorAgentState()
-}
-
-func (a *App) startProcessSwitchMonitor() error {
+func (a *App) startMonitorAgent() error {
 	monitorPath := filepath.Join(config.GetInstallDir(), "BS2PRO-Monitor.exe")
 	if _, err := os.Stat(monitorPath); err != nil {
 		return fmt.Errorf("monitor程序不存在: %s", monitorPath)
@@ -733,7 +724,7 @@ func (a *App) isMonitorProcessRunning() bool {
 	return strings.Contains(strings.ToLower(string(out)), "bs2pro-monitor.exe")
 }
 
-func (a *App) stopProcessSwitchMonitor() error {
+func (a *App) stopMonitorAgent() error {
 	if !a.isMonitorProcessRunning() {
 		return nil
 	}
@@ -1278,55 +1269,6 @@ func writeOptionalZipFile(zw *zip.Writer, entryName, sourcePath string) error {
 	}
 	_, err = w.Write(data)
 	return err
-}
-
-func (a *App) CheckProcessSwitchNow() bool {
-	resp, err := a.sendRequest(ipc.ReqCheckProcessSwitchNow, nil)
-	if err != nil || resp == nil || !resp.Success {
-		return false
-	}
-	var success bool
-	if err := json.Unmarshal(resp.Data, &success); err != nil {
-		logWarn("解析进程切换立即检查结果失败", "error", err)
-		return false
-	}
-	return success
-}
-
-func (a *App) ListRunningProcessNames() []string {
-	cmd := exec.Command("tasklist", "/FO", "CSV", "/NH")
-	platformutil.HideCommandWindow(cmd)
-	out, err := cmd.Output()
-	if err != nil {
-		return []string{}
-	}
-
-	r := csv.NewReader(strings.NewReader(string(out)))
-	records, err := r.ReadAll()
-	if err != nil {
-		return []string{}
-	}
-
-	nameSet := map[string]struct{}{}
-	for _, rec := range records {
-		if len(rec) == 0 {
-			continue
-		}
-		name := strings.TrimSpace(rec[0])
-		if name == "" {
-			continue
-		}
-		nameSet[name] = struct{}{}
-	}
-
-	result := make([]string, 0, len(nameSet))
-	for name := range nameSet {
-		result = append(result, name)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return strings.ToLower(result[i]) < strings.ToLower(result[j])
-	})
-	return result
 }
 
 func (a *App) SetAutoControl(enabled bool) error {

@@ -18,7 +18,6 @@ import (
 	"github.com/TIANLI0/BS2PRO-Controller/internal/ipc"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/logger"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/notification"
-	"github.com/TIANLI0/BS2PRO-Controller/internal/procswitch"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/rgb"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/temperature"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/types"
@@ -64,16 +63,8 @@ type CoreApp struct {
 	// 运行时风扇曲线（含自动偏移学习结果，不直接落盘）
 	runtimeFanCurve []types.FanCurvePoint
 
-	// 进程联动风扇配置
-	processSwitcher               *procswitch.Switcher
-	processSwitchStop             chan struct{}
-	processSwitchWG               sync.WaitGroup
-	activeProcessProfilePath      string
-	baseFanCurveBeforeSwitch      []types.FanCurvePoint
-	baseOffsetEnabledBeforeSwitch *bool
-	lastReportedForegroundProcess string
-	notificationManager           *notification.Manager
-	systemHotkeyConflicts         []types.HotkeyConflict
+	notificationManager   *notification.Manager
+	systemHotkeyConflicts []types.HotkeyConflict
 }
 
 func NewCoreApp(debugMode bool) *CoreApp {
@@ -104,7 +95,6 @@ func NewCoreApp(debugMode bool) *CoreApp {
 	deviceMgr := device.NewManager(customLogger)
 	tempReader := temperature.NewReader(asusClient, customLogger)
 	configMgr := config.NewManager(installDir, customLogger)
-	procSwitcher := procswitch.New(configMgr.GetDefaultConfigDir(), customLogger)
 
 	fanOffsetCtrl := fanoffset.New(fanoffset.DefaultConfig(), customLogger)
 	if err := fanOffsetCtrl.EnablePersistence(filepath.Join(configMgr.GetStateDir(), "fanoffset")); err != nil {
@@ -128,11 +118,9 @@ func NewCoreApp(debugMode bool) *CoreApp {
 		lastDeviceMode:     "",
 		userSetAutoControl: false,
 		debugMode:          debugMode,
-		fanOffsetCtrl:      fanOffsetCtrl,
-		fanCommandShaper:   commandShaper,
-		processSwitcher:    procSwitcher,
-		processSwitchStop:  make(chan struct{}),
-		cleanupChan:        make(chan bool, 1),
+		fanOffsetCtrl:    fanOffsetCtrl,
+		fanCommandShaper: commandShaper,
+		cleanupChan:      make(chan bool, 1),
 		lastSmartModeLevel: 0,
 	}
 	app.notificationManager = notification.NewManager(func() bool {
@@ -172,8 +160,6 @@ func (a *CoreApp) Start() error {
 		})
 	}
 
-	a.startProcessSwitchMonitoring()
-
 	a.safeGo("delayedConnectDevice", func() {
 		time.Sleep(1 * time.Second)
 		if !a.ConnectDevice() {
@@ -189,8 +175,6 @@ func (a *CoreApp) Start() error {
 func (a *CoreApp) Stop() {
 	a.logInfo("核心服务正在停止...")
 	a.logInfo("Stop路径: cleanup -> DisconnectDevice -> CloseIPC")
-	close(a.processSwitchStop)
-	a.processSwitchWG.Wait()
 	if a.fanOffsetCtrl != nil {
 		if err := a.fanOffsetCtrl.Close(); err != nil {
 			a.logError("停止前刷新风扇长期记忆失败", "error", err)
@@ -279,16 +263,6 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) (res ipc.Response) {
 	case ipc.ReqGetFanCurve:
 		curve := a.visibleFanCurve(a.configManager.Get().FanCurve)
 		return a.dataResponse(curve)
-	case ipc.ReqCheckProcessSwitchNow:
-		switched := a.CheckProcessSwitchNow()
-		return a.successResponse(switched)
-	case ipc.ReqReportForegroundProcess:
-		var params ipc.ReportForegroundProcessParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析前台进程失败: " + err.Error())
-		}
-		a.handleForegroundProcessReport(params.ProcessName)
-		return a.successResponse(true)
 	case ipc.ReqNotifyImportCompleted:
 		var params ipc.NotifyProfilesParams
 		if err := json.Unmarshal(req.Data, &params); err != nil {
@@ -437,14 +411,6 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) (res ipc.Response) {
 		}
 		success := a.SetRGBMode(params)
 		return a.successResponse(success)
-	case ipc.ReqToggleProcessSwitch:
-		cfg := a.configManager.Get()
-		next := !cfg.ProcessSwitchEnabled
-		a.logInfo("收到快捷键切换进程联动请求", "event", req.Type, "current", cfg.ProcessSwitchEnabled, "next", next)
-		if err := a.SetProcessSwitchEnabled(next); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
 	case ipc.ReqCycleRGBMode:
 		a.logInfo("收到快捷键切换RGB模式请求")
 		success := a.CycleRGBMode()
@@ -817,33 +783,6 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	return nil
 }
 
-func (a *CoreApp) SetProcessSwitchEnabled(enabled bool) error {
-	a.mutex.Lock()
-	cfg := a.configManager.Get()
-	cfg.ProcessSwitchEnabled = enabled
-	err := a.configManager.Update(cfg)
-	a.mutex.Unlock()
-	if err != nil {
-		return err
-	}
-	if enabled {
-		a.safeGo("processSwitchImmediateCheck", func() {
-			a.runProcessSwitchCheck(a.configManager.Get())
-		})
-	} else {
-		a.restoreBaseFanCurveAfterProcessSwitch()
-		a.mutex.Lock()
-		a.activeProcessProfilePath = ""
-		a.lastReportedForegroundProcess = ""
-		a.mutex.Unlock()
-	}
-	if a.notificationManager != nil {
-		a.notificationManager.OnProcessSwitchChanged(enabled)
-	}
-	a.broadcastConfigUpdate(cfg)
-	return nil
-}
-
 func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
 	a.mutex.Lock()
 	cfg := a.configManager.Get()
@@ -897,43 +836,6 @@ func (a *CoreApp) ApplyOffsetToCurve() error {
 	return nil
 }
 
-func (a *CoreApp) startProcessSwitchMonitoring() {
-	a.processSwitchWG.Add(1)
-	a.safeGo("processSwitchMonitoring", func() {
-		defer a.processSwitchWG.Done()
-		for {
-			a.mutex.RLock()
-			paused := a.corePaused
-			a.mutex.RUnlock()
-			cfg := a.configManager.Get()
-			interval := cfg.ProcessSwitchInterval
-			if interval < 1 {
-				interval = 3
-			}
-
-			if !paused && cfg.ProcessSwitchEnabled {
-				a.runProcessSwitchCheck(cfg)
-			}
-
-			select {
-			case <-a.processSwitchStop:
-				return
-			case <-time.After(time.Duration(interval) * time.Second):
-			}
-		}
-	})
-}
-
-func (a *CoreApp) handleForegroundProcessReport(processName string) {
-	if !a.configManager.Get().ProcessSwitchEnabled {
-		return
-	}
-	a.mutex.Lock()
-	a.lastReportedForegroundProcess = strings.ToLower(strings.TrimSpace(processName))
-	a.mutex.Unlock()
-	a.logDebug("进程联动收到探针上报前台进程", "process", processName)
-}
-
 func (a *CoreApp) emitNotification(req notification.Request) {
 	if a.ipcServer == nil || !a.ipcServer.HasRoleClient(ipc.RoleMonitorAgent) {
 		a.logDebug("通知未投递，monitor 未连接", "role", ipc.RoleMonitorAgent, "type", req.Type)
@@ -943,116 +845,6 @@ func (a *CoreApp) emitNotification(req notification.Request) {
 	a.ipcServer.BroadcastEventToRole(ipc.RoleMonitorAgent, ipc.EventNotificationRequest, req)
 }
 
-func (a *CoreApp) runProcessSwitchCheck(cfg types.AppConfig) {
-	if a.processSwitcher == nil {
-		return
-	}
-
-	a.mutex.RLock()
-	foregroundProcess := a.lastReportedForegroundProcess
-	a.mutex.RUnlock()
-	procs := a.processSwitcher.ListProcessNames(foregroundProcess)
-	a.logDebug("进程联动当前前台进程集合", "processes", procs)
-
-	rule := a.processSwitcher.MatchRule(cfg.ProcessSwitchRules, procs)
-	if rule == nil {
-		a.logDebug("进程联动未命中，准备恢复原始风扇曲线")
-		a.restoreBaseFanCurveAfterProcessSwitch()
-		a.mutex.Lock()
-		a.activeProcessProfilePath = ""
-		a.mutex.Unlock()
-		return
-	}
-
-	resolved := a.processSwitcher.ResolveProfilePath(rule.ProfilePath)
-	a.mutex.RLock()
-	alreadyApplied := strings.EqualFold(a.activeProcessProfilePath, resolved)
-	a.mutex.RUnlock()
-	if alreadyApplied {
-		a.logDebug("进程联动命中但已应用，无需重复切换", "process", rule.ProcessName, "path", resolved)
-		return
-	}
-
-	curve, err := a.processSwitcher.LoadCurve(rule.ProfilePath)
-	if err != nil {
-		a.logError("进程联动加载配置失败", "process", rule.ProcessName, "path", rule.ProfilePath, "error", err)
-		return
-	}
-
-	if err := a.applyProcessCurve(curve, resolved); err != nil {
-		a.logError("进程联动应用配置失败", "process", rule.ProcessName, "path", rule.ProfilePath, "error", err)
-		return
-	}
-
-	a.logInfo("进程联动已切换风扇配置", "process", rule.ProcessName, "path", resolved)
-}
-
-func (a *CoreApp) applyProcessCurve(curve []types.FanCurvePoint, profilePath string) error {
-	a.mutex.Lock()
-	cfg := a.configManager.Get()
-	if a.activeProcessProfilePath == "" {
-		a.baseFanCurveBeforeSwitch = cloneFanCurvePoints(cfg.FanCurve)
-		baseOffsetEnabled := cfg.FanCurveOffsetEnabled
-		a.baseOffsetEnabledBeforeSwitch = &baseOffsetEnabled
-	}
-	cfg.FanCurve = cloneFanCurvePoints(curve)
-	for i := range cfg.FanCurve {
-		cfg.FanCurve[i].Offset = 0
-	}
-	cfg.FanCurveOffsetEnabled = false
-	err := a.configManager.Update(cfg)
-	isConnected := a.isConnected
-	currentTemp := a.currentTemp.MaxTemp
-	if err == nil {
-		a.activeProcessProfilePath = profilePath
-	}
-	a.mutex.Unlock()
-	if err != nil {
-		return err
-	}
-	a.resetFanRuntimeState()
-
-	if isConnected && cfg.AutoControl && currentTemp > 0 {
-		thermalTargetRPM := temperature.CalculateTargetRPM(currentTemp, cfg.FanCurve)
-		plan := a.planFanCommandTarget(time.Now(), thermalTargetRPM, a.deviceManager.GetCurrentFanData())
-		if plan.ShouldSend && plan.CommandTargetRPM > 0 {
-			if !a.deviceManager.SetFanSpeed(plan.CommandTargetRPM) {
-				a.logError("进程联动应用目标转速失败", "thermal_target_rpm", plan.ThermalTargetRPM, "target_rpm", plan.CommandTargetRPM, "shape_reason", plan.ShapeReason, "temp", currentTemp, "profile", profilePath)
-			}
-		}
-	}
-
-	a.broadcastConfigUpdate(cfg)
-	return nil
-}
-
-func (a *CoreApp) restoreBaseFanCurveAfterProcessSwitch() {
-	a.mutex.Lock()
-	if a.activeProcessProfilePath == "" || len(a.baseFanCurveBeforeSwitch) == 0 {
-		a.mutex.Unlock()
-		return
-	}
-	a.logDebug("进程联动退出前台，恢复原始风扇曲线", "previous", a.activeProcessProfilePath)
-	cfg := a.configManager.Get()
-	cfg.FanCurve = cloneFanCurvePoints(a.baseFanCurveBeforeSwitch)
-	if a.baseOffsetEnabledBeforeSwitch != nil {
-		cfg.FanCurveOffsetEnabled = *a.baseOffsetEnabledBeforeSwitch
-	}
-	err := a.configManager.Update(cfg)
-	if err == nil {
-		a.logDebug("进程联动恢复完成", "restored_curve_points", len(cfg.FanCurve), "restored_offset_enabled", cfg.FanCurveOffsetEnabled)
-		a.baseFanCurveBeforeSwitch = nil
-		a.baseOffsetEnabledBeforeSwitch = nil
-	}
-	a.mutex.Unlock()
-	if err != nil {
-		a.logError("恢复原始风扇曲线失败", "error", err)
-		return
-	}
-	a.resetFanRuntimeState()
-	a.broadcastConfigUpdate(cfg)
-}
-
 func cloneFanCurvePoints(src []types.FanCurvePoint) []types.FanCurvePoint {
 	if len(src) == 0 {
 		return nil
@@ -1060,15 +852,6 @@ func cloneFanCurvePoints(src []types.FanCurvePoint) []types.FanCurvePoint {
 	dst := make([]types.FanCurvePoint, len(src))
 	copy(dst, src)
 	return dst
-}
-
-func (a *CoreApp) CheckProcessSwitchNow() bool {
-	cfg := a.configManager.Get()
-	if !cfg.ProcessSwitchEnabled {
-		return false
-	}
-	a.runProcessSwitchCheck(cfg)
-	return true
 }
 
 func (a *CoreApp) SetAutoControl(enabled bool) error {
@@ -1459,8 +1242,6 @@ func (a *CoreApp) triggerHotkeyAction(action string) {
 		a.logInfo("show-main-window 已改为由 Monitor 本地处理")
 	case "toggle-auto-control":
 		a.toggleAutoControlHotkey()
-	case "toggle-process-switch":
-		a.toggleProcessSwitchHotkey()
 	case "cycle-rgb-mode":
 		a.CycleRGBMode()
 	case "device-toggle-offset":
@@ -1490,15 +1271,6 @@ func (a *CoreApp) toggleAutoControlHotkey() {
 	if err := a.SetAutoControl(next); err != nil {
 		a.logError("快捷键切换智能变频失败", "current", cfg.AutoControl, "next", next, "error", err)
 		a.emitNotification(notification.Request{Title: "智能变频切换失败", Message: err.Error()})
-	}
-}
-
-func (a *CoreApp) toggleProcessSwitchHotkey() {
-	cfg := a.configManager.Get()
-	next := !cfg.ProcessSwitchEnabled
-	if err := a.SetProcessSwitchEnabled(next); err != nil {
-		a.logError("快捷键切换进程联动失败", "current", cfg.ProcessSwitchEnabled, "next", next, "error", err)
-		a.emitNotification(notification.Request{Title: "进程联动切换失败", Message: err.Error()})
 	}
 }
 
@@ -1645,11 +1417,10 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 				a.mutex.Lock()
 				a.currentTemp = temp
-				processSwitchActive := a.activeProcessProfilePath != ""
 				a.mutex.Unlock()
 
 				// 将自动偏移量附加到温度数据中，供 GUI 展示
-				if cfg.FanCurveOffsetEnabled && !processSwitchActive {
+				if cfg.FanCurveOffsetEnabled {
 					displayCurve := a.visibleFanCurve(cfg.FanCurve)
 					temp.AutoOffset = temperature.CalculateOffset(temp.MaxTemp, displayCurve)
 					temp.EngineState = a.fanOffsetCtrl.GetCurrentZoneState(temp.MaxTemp, displayCurve)
@@ -1694,7 +1465,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					}
 					newSampleCount := max(cfg.TempSampleCount, 1)
 					// 偏移开启时，平滑采样至少3次，确保趋势数据不受噪声干扰
-					if cfg.FanCurveOffsetEnabled && !processSwitchActive && newSampleCount < 3 {
+					if cfg.FanCurveOffsetEnabled && newSampleCount < 3 {
 						newSampleCount = 3
 					}
 					if newSampleCount != sampleCount {
@@ -1707,7 +1478,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						newIntervalSec = 1
 					}
 					// 偏移开启时，采样间隔至少3秒
-					if cfg.FanCurveOffsetEnabled && !processSwitchActive && newIntervalSec < 3 {
+					if cfg.FanCurveOffsetEnabled && newIntervalSec < 3 {
 						newIntervalSec = 3
 					}
 					if newIntervalSec != currentIntervalSec {
@@ -1726,12 +1497,12 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 					var effectiveCurve []types.FanCurvePoint
 					var latestFanData *types.FanData
-					if cfg.FanCurveOffsetEnabled && !processSwitchActive {
+					if cfg.FanCurveOffsetEnabled {
 						effectiveCurve = a.visibleFanCurve(cfg.FanCurve)
 					} else {
 						effectiveCurve = cfg.FanCurve
 					}
-					if cfg.FanCurveOffsetEnabled && !processSwitchActive {
+					if cfg.FanCurveOffsetEnabled {
 						// 计算设备最大RPM (根据挡位)
 						deviceMaxRPM := 4000
 						if fd := a.deviceManager.GetCurrentFanData(); fd != nil {
@@ -1758,7 +1529,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						}
 					}
 					thermalTargetRPM := temperature.CalculateTargetRPM(avgTemp, effectiveCurve)
-					if cfg.FanCurveOffsetEnabled && !processSwitchActive {
+					if cfg.FanCurveOffsetEnabled {
 						thermalTargetRPM = temperature.ApplyOffset(thermalTargetRPM, temperature.CalculateOffset(avgTemp, effectiveCurve))
 					}
 					if latestFanData == nil {

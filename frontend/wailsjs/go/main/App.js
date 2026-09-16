@@ -10,10 +10,6 @@ export function CheckMonitorAutoStart() {
   return window['go']['main']['App']['CheckMonitorAutoStart']();
 }
 
-export function CheckProcessSwitchNow() {
-  return window['go']['main']['App']['CheckProcessSwitchNow']();
-}
-
 export function CheckWindowsAutoStart() {
   return window['go']['main']['App']['CheckWindowsAutoStart']();
 }
@@ -80,10 +76,6 @@ export function HideWindow() {
 
 export function ImportFanCurveProfilesZip() {
   return window['go']['main']['App']['ImportFanCurveProfilesZip']();
-}
-
-export function ListRunningProcessNames() {
-  return window['go']['main']['App']['ListRunningProcessNames']();
 }
 
 export function LogFrontendError(arg1, arg2, arg3, arg4) {

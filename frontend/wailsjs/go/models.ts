@@ -168,22 +168,6 @@ export namespace types {
 		    return a;
 		}
 	}
-	export class ProcessFanRule {
-	    processName: string;
-	    profilePath: string;
-	    enabled: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new ProcessFanRule(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.processName = source["processName"];
-	        this.profilePath = source["profilePath"];
-	        this.enabled = source["enabled"];
-	    }
-	}
 	export class HotkeyBinding {
 	    action: string;
 	    accelerator: string;
@@ -281,9 +265,6 @@ export namespace types {
 	    customSpeedRPM: number;
 	    ignoreDeviceOnReconnect: boolean;
 	    fanCurveOffsetEnabled: boolean;
-	    processSwitchEnabled: boolean;
-	    processSwitchInterval: number;
-	    processSwitchRules: ProcessFanRule[];
 	    rgbConfig?: RGBConfig;
 	    hotkeyConflicts?: HotkeyConflict[];
 	
@@ -315,9 +296,6 @@ export namespace types {
 	        this.customSpeedRPM = source["customSpeedRPM"];
 	        this.ignoreDeviceOnReconnect = source["ignoreDeviceOnReconnect"];
 	        this.fanCurveOffsetEnabled = source["fanCurveOffsetEnabled"];
-	        this.processSwitchEnabled = source["processSwitchEnabled"];
-	        this.processSwitchInterval = source["processSwitchInterval"];
-	        this.processSwitchRules = this.convertValues(source["processSwitchRules"], ProcessFanRule);
 	        this.rgbConfig = this.convertValues(source["rgbConfig"], RGBConfig);
 	        this.hotkeyConflicts = this.convertValues(source["hotkeyConflicts"], HotkeyConflict);
 	    }

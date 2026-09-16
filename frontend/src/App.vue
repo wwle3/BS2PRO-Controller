@@ -53,8 +53,6 @@
                        @click="setCurrentView('device-params')" :is-dark="isDark" :is-collapsed="isCollapsed" />
           <SidebarItem :icon="Lightbulb" label="RGB 灯效" :active="currentView === 'rgb-light'"
                        @click="setCurrentView('rgb-light')" :is-dark="isDark" :is-collapsed="isCollapsed" />
-          <SidebarItem :icon="Workflow" label="进程联动" :active="currentView === 'process-switch'"
-                       @click="setCurrentView('process-switch')" :is-dark="isDark" :is-collapsed="isCollapsed" />
           <SidebarItem :icon="Settings" label="系统设置" :active="currentView === 'system-settings'"
                        @click="setCurrentView('system-settings')" :is-dark="isDark" :is-collapsed="isCollapsed" />
         </div>
@@ -105,10 +103,6 @@
           :is-dark="isDark" :is-connected="isConnected"
           :config="config" :fan-data="fanData" :temperature="temperature"
           @config-change="handleConfigChange" />
-        <ProcessSwitchView v-else-if="currentView === 'process-switch'"
-          :is-dark="isDark"
-          :config="config"
-          @config-change="handleConfigChange" />
         <DeviceParamsView v-else-if="currentView === 'device-params'"
           :is-dark="isDark" :is-connected="isConnected"
           :config="config"
@@ -129,12 +123,11 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { LayoutDashboard, Wind, Gauge, Zap, Settings, Info, Sun, Moon, ChevronRight, ChevronLeft, Minus, Square, X, Palette, LineChart, Sliders, Lightbulb, Workflow } from 'lucide-vue-next'
+import { LayoutDashboard, Wind, Gauge, Zap, Settings, Info, Sun, Moon, ChevronRight, ChevronLeft, Minus, Square, X, Palette, LineChart, Sliders, Lightbulb } from 'lucide-vue-next'
 import SidebarItem from './components/ui/SidebarItem.vue'
 import DashboardView from './views/DashboardView.vue'
 import RGBLightView from './views/RGBLightView.vue'
 import FanCurveView from './views/FanCurveView.vue'
-import ProcessSwitchView from './views/ProcessSwitchView.vue'
 import DeviceParamsView from './views/DeviceParamsView.vue'
 import SystemSettingsView from './views/SystemSettingsView.vue'
 import AboutView from './views/AboutView.vue'
@@ -486,7 +479,6 @@ const appViewActionMap: Record<string, string> = {
   'navigate-fan-curve': 'fan-curve',
   'navigate-device-params': 'device-params',
   'navigate-rgb-light': 'rgb-light',
-  'navigate-process-switch': 'process-switch',
   'navigate-system-settings': 'system-settings',
   'navigate-about': 'about',
 }

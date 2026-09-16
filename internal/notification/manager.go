@@ -12,7 +12,6 @@ const (
 	TypeConfigImportCompleted = "config_import_completed"
 	TypeConfigExportCompleted = "config_export_completed"
 	TypeRGBModeChanged        = "rgb_mode_changed"
-	TypeProcessSwitchChanged  = "process_switch_changed"
 	TypeAutoControlChanged    = "auto_control_changed"
 )
 
@@ -94,21 +93,6 @@ func (m *Manager) OnRGBModeChanged(modeName string) {
 		return
 	}
 	m.emitLocked(newRequest(TypeRGBModeChanged, "RGB 灯光模式已切换", fmt.Sprintf("当前模式：%s", modeName), "rgb_mode_changed", map[string]any{"mode": modeName}))
-}
-
-func (m *Manager) OnProcessSwitchChanged(enabled bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if !m.isEnabled() {
-		return
-	}
-	title := "进程联动已关闭"
-	message := "快捷键已关闭进程联动"
-	if enabled {
-		title = "进程联动已开启"
-		message = "快捷键已开启进程联动"
-	}
-	m.emitLocked(newRequest(TypeProcessSwitchChanged, title, message, "process_switch_changed", map[string]any{"enabled": enabled}))
 }
 
 func (m *Manager) OnAutoControlChanged(enabled bool) {

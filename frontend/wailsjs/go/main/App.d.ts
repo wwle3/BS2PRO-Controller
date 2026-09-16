@@ -8,8 +8,6 @@ export function ApplyOffsetToCurve():Promise<void>;
 
 export function CheckMonitorAutoStart():Promise<boolean>;
 
-export function CheckProcessSwitchNow():Promise<boolean>;
-
 export function CheckWindowsAutoStart():Promise<boolean>;
 
 export function ConnectDevice():Promise<boolean>;
@@ -43,8 +41,6 @@ export function GetTemperature():Promise<types.TemperatureData>;
 export function HideWindow():Promise<void>;
 
 export function ImportFanCurveProfilesZip():Promise<void>;
-
-export function ListRunningProcessNames():Promise<Array<string>>;
 
 export function LogFrontendError(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 

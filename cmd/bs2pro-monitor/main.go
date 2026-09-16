@@ -40,7 +40,6 @@ var monitorTrayState = newMonitorTrayState()
 var monitorTrayManager *tray.Manager
 var monitorLogger *logger.CustomLogger
 var monitorNotificationsEnabled atomic.Bool
-var monitorProcessSwitchEnabled atomic.Bool
 var monitorTrayEnabled atomic.Bool
 var hotkeyEditMode bool
 var lastGUIShowRequest int64
@@ -112,7 +111,6 @@ func main() {
 	configManager := config.NewManager(config.GetInstallDir(), nil)
 	startupCfg := configManager.Load(false)
 	monitorNotificationsEnabled.Store(startupCfg.NotificationsEnabled)
-	monitorProcessSwitchEnabled.Store(startupCfg.ProcessSwitchEnabled)
 	monitorTrayEnabled.Store(startupCfg.TrayEnabled)
 	syncTrayEnabled(startupCfg.TrayEnabled)
 
@@ -142,18 +140,6 @@ func main() {
 
 		for client.IsConnected() {
 			refreshMonitorTrayState(client)
-			if monitorProcessSwitchEnabled.Load() {
-				processName := strings.TrimSpace(getForegroundProcessName())
-				if processName != "" {
-					if _, err := client.SendRequest(ipc.ReqReportForegroundProcess, ipc.ReportForegroundProcessParams{
-						ProcessName: processName,
-						ReportedAt:  time.Now().Format(time.RFC3339),
-					}); err != nil {
-						monitorWarn("report foreground process failed", "error", err)
-						break
-					}
-				}
-			}
 			time.Sleep(2 * time.Second)
 		}
 
@@ -580,7 +566,6 @@ func handleEvent(event ipc.Event) {
 		if err := json.Unmarshal(event.Data, &cfg); err == nil {
 			setMonitorDebugMode(cfg.DebugMode)
 			monitorNotificationsEnabled.Store(cfg.NotificationsEnabled)
-			monitorProcessSwitchEnabled.Store(cfg.ProcessSwitchEnabled)
 			syncTrayEnabled(cfg.TrayEnabled)
 			if cfg.Hotkeys == nil {
 				monitorDebug("config update hotkeys=nil")

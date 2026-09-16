@@ -29,8 +29,6 @@ import {
   SetCustomSpeed,
   SetRGBMode,
   CheckWindowsAutoStart,
-  CheckProcessSwitchNow,
-  ListRunningProcessNames,
   ResumeCoreService,
   SetWindowsAutoStart,
   StopCoreService,
@@ -161,14 +159,6 @@ class ApiService {
 
   async setMonitorAutoStart(enabled: boolean): Promise<void> {
     return await (window as any).go?.main?.App?.SetMonitorAutoStart(enabled);
-  }
-
-  async checkProcessSwitchNow(): Promise<boolean> {
-    return await CheckProcessSwitchNow();
-  }
-
-  async listRunningProcessNames(): Promise<string[]> {
-    return await ListRunningProcessNames();
   }
 
   // 数据获取

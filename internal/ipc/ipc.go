@@ -37,10 +37,8 @@ const (
 	ReqGetConfig               RequestType = "GetConfig"
 	ReqUpdateConfig            RequestType = "UpdateConfig"
 	ReqSetFanCurve             RequestType = "SetFanCurve"
-	ReqGetFanCurve             RequestType = "GetFanCurve"
-	ReqCheckProcessSwitchNow   RequestType = "CheckProcessSwitchNow"
-	ReqReportForegroundProcess RequestType = "ReportForegroundProcess"
-	ReqRegisterClient          RequestType = "RegisterClient"
+	ReqGetFanCurve           RequestType = "GetFanCurve"
+	ReqRegisterClient        RequestType = "RegisterClient"
 	ReqNotifyImportCompleted   RequestType = "NotifyImportCompleted"
 	ReqNotifyExportCompleted   RequestType = "NotifyExportCompleted"
 
@@ -79,7 +77,6 @@ const (
 	ReqCycleRGBMode          RequestType = "CycleRGBMode"
 	ReqReportHotkeyConflicts RequestType = "ReportHotkeyConflicts"
 	ReqUnsubscribeEvents     RequestType = "UnsubscribeEvents"
-	ReqToggleProcessSwitch   RequestType = "ToggleProcessSwitch"
 	ReqTriggerHotkeyAction   RequestType = "TriggerHotkeyAction"
 	ReqSetHotkeyEditMode     RequestType = "SetHotkeyEditMode"
 
@@ -133,11 +130,6 @@ const (
 
 type RegisterClientParams struct {
 	Role string `json:"role"`
-}
-
-type ReportForegroundProcessParams struct {
-	ProcessName string `json:"processName"`
-	ReportedAt  string `json:"reportedAt"`
 }
 
 type NotifyProfilesParams struct {

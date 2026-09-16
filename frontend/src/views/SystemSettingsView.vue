@@ -18,7 +18,7 @@
                       :active="config.windowsAutoStart" @toggle="handleWindowsAutoStart"
                       :loading="loading.windowsAutoStart" />
         <div class="h-px bg-slate-50 dark:bg-white/6 mx-6" />
-        <SettingItem title="启用托盘菜单" desc="启用托盘菜单；通知、快捷键、进程联动启用其一都会常驻 Monitor"
+        <SettingItem title="启用托盘菜单" desc="启用托盘菜单；通知或快捷键启用其一都会常驻 Monitor"
                      :active="(config as any).trayEnabled ?? true" @toggle="handleTrayEnabled" />
         <div class="h-px bg-slate-50 dark:bg-white/6 mx-6" />
         <SettingItem title="允许系统通知" desc="在后台运行或窗口未置前时展示设备与服务状态提醒"
@@ -27,7 +27,7 @@
         <SettingItem title="跟随系统主题" desc="启用后界面亮暗外观将自动跟随 Windows 系统主题切换"
                      :active="followSystemTheme" @toggle="handleFollowSystemTheme" />
         <div class="h-px bg-slate-50 dark:bg-white/6 mx-6" />
-        <SettingItem title="暂停核心控制" desc="暂停后停止设备连接、自动温控与进程联动；保留界面与恢复入口"
+        <SettingItem title="暂停核心控制" desc="暂停后停止设备连接与自动温控；保留界面与恢复入口"
                      :active="corePaused" @toggle="handleCorePaused" />
       </div>
 
@@ -227,7 +227,6 @@ const defaultHotkeys = {
 	global: [
 		{ action: 'show-main-window', accelerator: 'Ctrl+Alt+B', description: '显示或隐藏主窗口', category: '窗口' },
 		{ action: 'toggle-auto-control', accelerator: 'Ctrl+Alt+A', description: '切换智能变频', category: '设备' },
-		{ action: 'toggle-process-switch', accelerator: 'Ctrl+Alt+P', description: '切换进程联动', category: '设备' },
 		{ action: 'cycle-rgb-mode', accelerator: 'Ctrl+Alt+R', description: '切换 RGB 灯光模式', category: 'RGB' },
 	],
 	inApp: [
@@ -238,9 +237,8 @@ const defaultHotkeys = {
 		{ action: 'navigate-fan-curve', accelerator: 'Alt+2', description: '切换到风扇曲线', category: '导航' },
 		{ action: 'navigate-device-params', accelerator: 'Alt+3', description: '切换到设备参数', category: '导航' },
 		{ action: 'navigate-rgb-light', accelerator: 'Alt+4', description: '切换到 RGB 灯效', category: '导航' },
-		{ action: 'navigate-process-switch', accelerator: 'Alt+5', description: '切换到进程联动', category: '导航' },
-		{ action: 'navigate-system-settings', accelerator: 'Alt+6', description: '切换到系统设置', category: '导航' },
-		{ action: 'navigate-about', accelerator: 'Alt+7', description: '切换到关于软件', category: '导航' },
+		{ action: 'navigate-system-settings', accelerator: 'Alt+5', description: '切换到系统设置', category: '导航' },
+		{ action: 'navigate-about', accelerator: 'Alt+6', description: '切换到关于软件', category: '导航' },
 	],
 } as const
 const customGlobalActionPresets = [

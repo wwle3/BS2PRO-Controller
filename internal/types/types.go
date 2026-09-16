@@ -73,13 +73,6 @@ type RGBConfig struct {
 	Brightness int              `json:"brightness"`
 }
 
-// ProcessFanRule 进程联动规则
-type ProcessFanRule struct {
-	ProcessName string `json:"processName"` // 进程名，如 game.exe
-	ProfilePath string `json:"profilePath"` // 风扇曲线文件路径
-	Enabled     bool   `json:"enabled"`     // 规则开关
-}
-
 // AppConfig 应用配置
 type AppConfig struct {
 	AutoControl             bool             `json:"autoControl"`             // 智能变频开关
@@ -104,9 +97,6 @@ type AppConfig struct {
 	CustomSpeedRPM          int              `json:"customSpeedRPM"`          // 自定义转速值(无上下限)
 	IgnoreDeviceOnReconnect bool             `json:"ignoreDeviceOnReconnect"` // 断连后忽略设备状态(保持APP配置)
 	FanCurveOffsetEnabled   bool             `json:"fanCurveOffsetEnabled"`   // 风扇曲线偏移开关
-	ProcessSwitchEnabled    bool             `json:"processSwitchEnabled"`    // 进程联动风扇配置
-	ProcessSwitchInterval   int              `json:"processSwitchInterval"`   // 进程扫描周期(秒)
-	ProcessSwitchRules      []ProcessFanRule `json:"processSwitchRules"`      // 进程联动规则
 	RGBConfig               *RGBConfig       `json:"rgbConfig"`               // RGB灯效配置
 	HotkeyConflicts         []HotkeyConflict `json:"hotkeyConflicts,omitempty"`
 }
@@ -220,9 +210,6 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		CustomSpeedRPM:          2000,
 		IgnoreDeviceOnReconnect: true, // 默认开启，防止断连后误判用户手动切换
 		FanCurveOffsetEnabled:   false,
-		ProcessSwitchEnabled:    false,
-		ProcessSwitchInterval:   3,
-		ProcessSwitchRules:      []ProcessFanRule{},
 		RGBConfig: &RGBConfig{
 			Mode:       "smart",
 			Colors:     []RGBColorConfig{{R: 0, G: 0, B: 255}, {R: 255, G: 0, B: 0}, {R: 0, G: 255, B: 0}},
@@ -239,7 +226,7 @@ func (c AppConfig) HotkeysRequireMonitor() bool {
 }
 
 func (c AppConfig) MonitorRequired() bool {
-	return c.TrayEnabled || c.NotificationsEnabled || c.ProcessSwitchEnabled || c.HotkeysRequireMonitor()
+	return c.TrayEnabled || c.NotificationsEnabled || c.HotkeysRequireMonitor()
 }
 
 func (c *AppConfig) NormalizeMonitorAutoStart() bool {
@@ -257,7 +244,6 @@ func GetDefaultHotkeyConfig() *HotkeyConfig {
 		Global: []HotkeyBinding{
 			{Action: "show-main-window", Accelerator: "Ctrl+Alt+B", Scope: "global", Enabled: true, Editable: true, Description: "显示或隐藏主窗口", Category: "窗口"},
 			{Action: "toggle-auto-control", Accelerator: "Ctrl+Alt+A", Scope: "global", Enabled: true, Editable: true, Description: "切换智能变频", Category: "设备"},
-			{Action: "toggle-process-switch", Accelerator: "Ctrl+Alt+P", Scope: "global", Enabled: true, Editable: true, Description: "切换进程联动", Category: "设备"},
 			{Action: "cycle-rgb-mode", Accelerator: "Ctrl+Alt+R", Scope: "global", Enabled: true, Editable: true, Description: "切换 RGB 灯光模式", Category: "RGB"},
 		},
 		InApp: []HotkeyBinding{
@@ -268,9 +254,8 @@ func GetDefaultHotkeyConfig() *HotkeyConfig {
 			{Action: "navigate-fan-curve", Accelerator: "Alt+2", Scope: "app", Enabled: true, Editable: true, Description: "切换到风扇曲线", Category: "导航"},
 			{Action: "navigate-device-params", Accelerator: "Alt+3", Scope: "app", Enabled: true, Editable: true, Description: "切换到设备参数", Category: "导航"},
 			{Action: "navigate-rgb-light", Accelerator: "Alt+4", Scope: "app", Enabled: true, Editable: true, Description: "切换到 RGB 灯效", Category: "导航"},
-			{Action: "navigate-process-switch", Accelerator: "Alt+5", Scope: "app", Enabled: true, Editable: true, Description: "切换到进程联动", Category: "导航"},
-			{Action: "navigate-system-settings", Accelerator: "Alt+6", Scope: "app", Enabled: true, Editable: true, Description: "切换到系统设置", Category: "导航"},
-			{Action: "navigate-about", Accelerator: "Alt+7", Scope: "app", Enabled: true, Editable: true, Description: "切换到关于软件", Category: "导航"},
+			{Action: "navigate-system-settings", Accelerator: "Alt+5", Scope: "app", Enabled: true, Editable: true, Description: "切换到系统设置", Category: "导航"},
+			{Action: "navigate-about", Accelerator: "Alt+6", Scope: "app", Enabled: true, Editable: true, Description: "切换到关于软件", Category: "导航"},
 		},
 	}
 }
@@ -386,12 +371,6 @@ func (c *AppConfig) Repair() {
 	if c.CustomSpeedRPM <= 0 {
 		c.CustomSpeedRPM = defaultCfg.CustomSpeedRPM
 	}
-	if c.ProcessSwitchInterval <= 0 {
-		c.ProcessSwitchInterval = defaultCfg.ProcessSwitchInterval
-	}
-	if c.ProcessSwitchRules == nil {
-		c.ProcessSwitchRules = []ProcessFanRule{}
-	}
 
 	if c.RGBConfig == nil {
 		c.RGBConfig = defaultCfg.RGBConfig
@@ -416,6 +395,15 @@ func (c *AppConfig) Repair() {
 	c.NormalizeMonitorAutoStart()
 }
 
+func isObsoleteHotkeyAction(action string) bool {
+	switch action {
+	case "toggle-process-switch", "navigate-process-switch":
+		return true
+	default:
+		return false
+	}
+}
+
 func repairHotkeyBindings(current []HotkeyBinding, defaults []HotkeyBinding) []HotkeyBinding {
 	index := map[string]HotkeyBinding{}
 	orderedExtras := make([]HotkeyBinding, 0)
@@ -424,6 +412,9 @@ func repairHotkeyBindings(current []HotkeyBinding, defaults []HotkeyBinding) []H
 		defaultActions[item.Action] = true
 	}
 	for _, item := range current {
+		if isObsoleteHotkeyAction(item.Action) {
+			continue
+		}
 		index[item.Action] = item
 		if !defaultActions[item.Action] {
 			orderedExtras = append(orderedExtras, item)
