@@ -246,17 +246,7 @@ func GetDefaultHotkeyConfig() *HotkeyConfig {
 			{Action: "toggle-auto-control", Accelerator: "Ctrl+Alt+A", Scope: "global", Enabled: true, Editable: true, Description: "切换智能变频", Category: "设备"},
 			{Action: "cycle-rgb-mode", Accelerator: "Ctrl+Alt+R", Scope: "global", Enabled: true, Editable: true, Description: "切换 RGB 灯光模式", Category: "RGB"},
 		},
-		InApp: []HotkeyBinding{
-			{Action: "save-context", Accelerator: "Ctrl+S", Scope: "app", Enabled: true, Editable: true, Description: "保存当前页面", Category: "通用"},
-			{Action: "escape-local-interaction", Accelerator: "Escape", Scope: "app", Enabled: true, Editable: true, Description: "取消页面交互", Category: "通用"},
-			{Action: "toggle-sidebar", Accelerator: "Ctrl+B", Scope: "app", Enabled: true, Editable: true, Description: "切换侧边栏", Category: "通用"},
-			{Action: "navigate-dashboard", Accelerator: "Alt+1", Scope: "app", Enabled: true, Editable: true, Description: "切换到设备概览", Category: "导航"},
-			{Action: "navigate-fan-curve", Accelerator: "Alt+2", Scope: "app", Enabled: true, Editable: true, Description: "切换到风扇曲线", Category: "导航"},
-			{Action: "navigate-device-params", Accelerator: "Alt+3", Scope: "app", Enabled: true, Editable: true, Description: "切换到设备参数", Category: "导航"},
-			{Action: "navigate-rgb-light", Accelerator: "Alt+4", Scope: "app", Enabled: true, Editable: true, Description: "切换到 RGB 灯效", Category: "导航"},
-			{Action: "navigate-system-settings", Accelerator: "Alt+5", Scope: "app", Enabled: true, Editable: true, Description: "切换到系统设置", Category: "导航"},
-			{Action: "navigate-about", Accelerator: "Alt+6", Scope: "app", Enabled: true, Editable: true, Description: "切换到关于软件", Category: "导航"},
-		},
+		InApp: []HotkeyBinding{},
 	}
 }
 
@@ -397,11 +387,10 @@ func (c *AppConfig) Repair() {
 
 func isObsoleteHotkeyAction(action string) bool {
 	switch action {
-	case "toggle-process-switch", "navigate-process-switch":
+	case "toggle-process-switch", "save-context", "escape-local-interaction", "toggle-sidebar":
 		return true
-	default:
-		return false
 	}
+	return strings.HasPrefix(action, "navigate-")
 }
 
 func repairHotkeyBindings(current []HotkeyBinding, defaults []HotkeyBinding) []HotkeyBinding {

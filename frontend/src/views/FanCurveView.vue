@@ -299,18 +299,6 @@ function clearLocalOffsets() {
   )
 }
 
-function onShortcutSave(event: Event) {
-  const view = (event as CustomEvent).detail?.view
-  if (view !== 'fan-curve') return
-  void saveCurve()
-}
-
-function onShortcutEscape(event: Event) {
-  const view = (event as CustomEvent).detail?.view
-  if (view !== 'fan-curve') return
-  cancelChanges()
-}
-
 async function persistProfiles() {
   try {
     await saveCustomProfiles(curveProfiles.value.map(profile => ({
@@ -608,14 +596,10 @@ onMounted(() => {
     visibleCurve.value = cloneCurve(curve)
   })
   document.addEventListener('mouseup', globalMouseUp)
-  document.addEventListener('app-shortcut-save', onShortcutSave as EventListener)
-  document.addEventListener('app-shortcut-escape', onShortcutEscape as EventListener)
 })
 onUnmounted(() => {
   unsubFanCurveUpdate?.()
   document.removeEventListener('mouseup', globalMouseUp)
-  document.removeEventListener('app-shortcut-save', onShortcutSave as EventListener)
-  document.removeEventListener('app-shortcut-escape', onShortcutEscape as EventListener)
   if (buttonAnimTimer) clearTimeout(buttonAnimTimer)
   if (transferMsgTimer) clearTimeout(transferMsgTimer)
 })

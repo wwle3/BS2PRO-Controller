@@ -59,7 +59,7 @@
       </div>
 
       <div class="p-1 rounded-[2.5rem] border surface-card">
-        <SettingItem title="启用快捷键" desc="统一控制全局快捷键与应用内快捷键总开关"
+        <SettingItem title="启用快捷键" desc="统一控制全局快捷键总开关"
                      :active="hotkeysConfig.enabled ?? true" @toggle="handleHotkeysEnabled" />
         <div class="h-px bg-slate-50 dark:bg-white/6 mx-6" />
         <div class="px-6 py-5 space-y-4">
@@ -130,28 +130,6 @@
                   />
                   <button @click="resetBinding(item, 'global', defaultHotkeys.global.length + customIndex)" class="px-3 py-2 rounded-xl text-xs surface-tile">重置</button>
                   <button @click="removeCustomGlobalBinding(customIndex)" class="px-3 py-2 rounded-xl text-xs surface-tile text-red-500 dark:text-red-300">删除</button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div>
-            <div class="text-sm font-bold text-slate-700 dark:text-slate-300">应用内快捷键</div>
-            <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <div v-for="(item, index) in hotkeysConfig.inApp || []" :key="`${item.action}-${index}`" class="flex items-center justify-between gap-4 rounded-xl px-3 py-3 surface-tile">
-                <div>
-                  <div class="font-semibold text-slate-700 dark:text-slate-200">{{ item.description }}</div>
-                  <div class="text-[11px] text-slate-400">{{ item.category || '应用内' }}</div>
-                </div>
-                <div class="flex items-center gap-2">
-                  <input
-                    :value="editingPreview[`app-${index}`] || item.accelerator"
-                    readonly
-                    @focus="setEditingAction(`app-${index}`)"
-                    @blur="clearEditingAction(`app-${index}`)"
-                    @keydown.prevent="captureHotkey($event, item, 'app')"
-                    :class="getHotkeyInputClass(`app-${index}`, 'w-32')"
-                  />
-                  <button @click="resetBinding(item, 'app', index)" class="px-3 py-2 rounded-xl text-xs surface-tile">重置</button>
                 </div>
               </div>
             </div>
@@ -229,17 +207,7 @@ const defaultHotkeys = {
 		{ action: 'toggle-auto-control', accelerator: 'Ctrl+Alt+A', description: '切换智能变频', category: '设备' },
 		{ action: 'cycle-rgb-mode', accelerator: 'Ctrl+Alt+R', description: '切换 RGB 灯光模式', category: 'RGB' },
 	],
-	inApp: [
-		{ action: 'save-context', accelerator: 'Ctrl+S', description: '保存当前页面', category: '通用' },
-		{ action: 'escape-local-interaction', accelerator: 'Escape', description: '取消页面交互', category: '通用' },
-		{ action: 'toggle-sidebar', accelerator: 'Ctrl+B', description: '切换侧边栏', category: '通用' },
-		{ action: 'navigate-dashboard', accelerator: 'Alt+1', description: '切换到设备概览', category: '导航' },
-		{ action: 'navigate-fan-curve', accelerator: 'Alt+2', description: '切换到风扇曲线', category: '导航' },
-		{ action: 'navigate-device-params', accelerator: 'Alt+3', description: '切换到设备参数', category: '导航' },
-		{ action: 'navigate-rgb-light', accelerator: 'Alt+4', description: '切换到 RGB 灯效', category: '导航' },
-		{ action: 'navigate-system-settings', accelerator: 'Alt+5', description: '切换到系统设置', category: '导航' },
-		{ action: 'navigate-about', accelerator: 'Alt+6', description: '切换到关于软件', category: '导航' },
-	],
+	inApp: [] as const,
 } as const
 const customGlobalActionPresets = [
 	{ action: 'device-toggle-offset', accelerator: 'Ctrl+Alt+O', description: '切换自动曲线偏移', category: '设备参数' },
