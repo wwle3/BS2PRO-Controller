@@ -36,10 +36,20 @@ if (Test-Path 'cmd/bs2pro-monitor/winres/winres.json') {
 }
 & go build -trimpath -ldflags $monitorLdflags -o 'build/bin/BS2PRO-Monitor.exe' './cmd/bs2pro-monitor/'
 
+$wailsVersion = (go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2).Trim()
+Write-Host "Ensuring Wails CLI $wailsVersion..."
+& go install "github.com/wailsapp/wails/v2/cmd/wails@$wailsVersion"
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to install Wails CLI $wailsVersion"
+}
+
 $env:PATH = "$env:PATH;C:\Program Files (x86)\NSIS\Bin"
 
 Write-Host 'Building main application...'
 & wails build -nsis -trimpath -webview2 browser -ldflags $wailsLdflags
+if ($LASTEXITCODE -ne 0) {
+    throw 'Wails build failed!'
+}
 
 if (-not (Test-Path 'build/bin/BS2PRO-CoreService.exe')) {
     throw 'Core service build failed!'
@@ -47,6 +57,10 @@ if (-not (Test-Path 'build/bin/BS2PRO-CoreService.exe')) {
 
 if (-not (Test-Path 'build/bin/BS2PRO-Monitor.exe')) {
     throw 'Monitor probe build failed!'
+}
+
+if (-not (Test-Path 'build/bin/BS2PRO-Controller-amd64-installer.exe')) {
+    throw 'NSIS installer build failed!'
 }
 
 Write-Host "Build completed successfully with display version $displayVersion"
