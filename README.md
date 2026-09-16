@@ -22,7 +22,7 @@ BS2PRO-Controller 是一个面向飞智空间站 BS2 / BS2PRO 的第三方桌面
 
 ## 技术栈
 
-- Go 1.26.1
+- Go 1.27.1
 - Wails v2
 - Vue 3
 - TypeScript
@@ -35,7 +35,7 @@ BS2PRO-Controller 是一个面向飞智空间站 BS2 / BS2PRO 的第三方桌面
 
 必需组件：
 
-- Go 1.26.1 或更高版本
+- Go 1.27.1 或更高版本
 - Node.js 18 或更高版本
 - Bun
 - Wails CLI  
