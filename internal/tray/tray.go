@@ -42,21 +42,13 @@ type Manager struct {
 
 // MenuItems 托盘菜单项结构
 type MenuItems struct {
-	Show           *systray.MenuItem
-	DeviceStatus   *systray.MenuItem
-	CPUTemperature *systray.MenuItem
-	GPUTemperature *systray.MenuItem
-	FanSpeed       *systray.MenuItem
-	AutoControl    *systray.MenuItem
+	Show        *systray.MenuItem
+	AutoControl *systray.MenuItem
 }
 
 // Status 状态信息
 type Status struct {
-	Connected        bool
 	CoreRunning      bool
-	CPUTemp          int
-	GPUTemp          int
-	CurrentRPM       uint16
 	AutoControlState bool
 }
 
@@ -195,21 +187,7 @@ func (m *Manager) createMenu() (items *MenuItems, err error) {
 	items = &MenuItems{}
 
 	items.Show = systray.AddMenuItem("显示主窗口", "显示控制器主窗口")
-	systray.AddSeparator()
 
-	items.DeviceStatus = systray.AddMenuItem("设备状态", "查看设备连接状态")
-	items.DeviceStatus.Disable()
-
-	items.CPUTemperature = systray.AddMenuItem("CPU温度", "显示当前CPU温度")
-	items.CPUTemperature.Disable()
-
-	items.GPUTemperature = systray.AddMenuItem("GPU温度", "显示当前GPU温度")
-	items.GPUTemperature.Disable()
-
-	items.FanSpeed = systray.AddMenuItem("风扇转速", "显示当前风扇转速")
-	items.FanSpeed.Disable()
-
-	// 智能变频状态 - 获取当前配置状态
 	autoControlEnabled := false
 	if m.getStatus != nil {
 		autoControlEnabled = m.getStatus().AutoControlState
@@ -249,14 +227,6 @@ func (m *Manager) triggerMenuAction(item *systray.MenuItem, busyTitle, originalT
 		item.Enable()
 		m.uiMutex.Unlock()
 	}()
-}
-
-// formatMenuValue 将数值格式化为菜单标题，为0时显示"无数据"。
-func formatMenuValue(label string, value int, unit string) string {
-	if value > 0 {
-		return fmt.Sprintf("%s: %d%s", label, value, unit)
-	}
-	return label + ": 无数据"
 }
 
 func (m *Manager) dispatchShowWindow() {
@@ -370,12 +340,6 @@ func (m *Manager) updateMenuStatus() {
 				m.uiMutex.Lock()
 				defer m.uiMutex.Unlock()
 
-				if status.Connected {
-					m.menuItems.DeviceStatus.SetTitle("设备状态: 已连接")
-				} else {
-					m.menuItems.DeviceStatus.SetTitle("设备状态: 未连接")
-				}
-
 				if status.CoreRunning {
 					m.menuStopCore.SetTitle("暂停核心")
 					m.menuStopCore.SetTooltip("停止底层守护服务")
@@ -384,33 +348,10 @@ func (m *Manager) updateMenuStatus() {
 					m.menuStopCore.SetTooltip("重新启动底层守护服务")
 				}
 
-				m.menuItems.CPUTemperature.SetTitle(formatMenuValue("CPU温度", status.CPUTemp, "°C"))
-				m.menuItems.GPUTemperature.SetTitle(formatMenuValue("GPU温度", status.GPUTemp, "°C"))
-				m.menuItems.FanSpeed.SetTitle(formatMenuValue("风扇转速", int(status.CurrentRPM), " RPM"))
-
 				if status.AutoControlState {
 					m.menuItems.AutoControl.Check()
 				} else {
 					m.menuItems.AutoControl.Uncheck()
-				}
-
-				tooltipText := "BS2PRO 控制器 - 设备未连接"
-				if status.Connected {
-					if status.AutoControlState {
-						tooltipText = fmt.Sprintf("BS2PRO 控制器 - 智能变频中\nCPU: %d°C GPU: %d°C", status.CPUTemp, status.GPUTemp)
-						if status.CurrentRPM > 0 {
-							tooltipText += fmt.Sprintf("\n风扇: %d RPM", status.CurrentRPM)
-						}
-					} else {
-						tooltipText = "BS2PRO 控制器 - 手动模式"
-						if status.CurrentRPM > 0 {
-							tooltipText += fmt.Sprintf("\n风扇: %d RPM", status.CurrentRPM)
-						}
-					}
-				}
-				if tooltipText != m.lastTooltip {
-					systray.SetTooltip(tooltipText)
-					m.lastTooltip = tooltipText
 				}
 				m.lastStatus = status
 			}()

@@ -182,10 +182,6 @@ func (s *monitorTrayStateStore) GetStatus() tray.Status {
 func (s *monitorTrayStateStore) SetDisconnected() {
 	s.mu.Lock()
 	s.status.CoreRunning = false
-	s.status.Connected = false
-	s.status.CPUTemp = 0
-	s.status.GPUTemp = 0
-	s.status.CurrentRPM = 0
 	s.mu.Unlock()
 }
 
@@ -312,12 +308,6 @@ func toggleCorePaused() bool {
 		return status.CoreRunning
 	}
 	status.CoreRunning = nextRunning
-	if !nextRunning {
-		status.Connected = false
-		status.CPUTemp = 0
-		status.GPUTemp = 0
-		status.CurrentRPM = 0
-	}
 	monitorTrayState.SetStatus(status)
 	return nextRunning
 }
@@ -368,27 +358,8 @@ func refreshMonitorTrayState(client *ipc.Client) {
 	status := monitorTrayState.GetStatus()
 	status.CoreRunning = true
 	status.AutoControlState = cfg.AutoControl
-	if connected, ok := deviceStatus["connected"].(bool); ok {
-		status.Connected = connected
-	}
 	if paused, ok := deviceStatus["paused"].(bool); ok {
 		status.CoreRunning = !paused
-	}
-	if temp, ok := deviceStatus["temperature"].(map[string]any); ok {
-		if cpu, ok := temp["cpuTemp"].(float64); ok {
-			status.CPUTemp = int(cpu)
-		}
-		if gpu, ok := temp["gpuTemp"].(float64); ok {
-			status.GPUTemp = int(gpu)
-		}
-	}
-	if currentData, ok := deviceStatus["currentData"].(map[string]any); ok {
-		if rpm, ok := currentData["currentRpm"].(float64); ok {
-			status.CurrentRPM = uint16(rpm)
-		}
-	}
-	if !status.CoreRunning {
-		status.Connected = false
 	}
 	monitorTrayState.SetStatus(status)
 }
@@ -585,17 +556,8 @@ func handleEvent(event ipc.Event) {
 			return
 		}
 		status := monitorTrayState.GetStatus()
-		if connected, ok := deviceStatus["connected"].(bool); ok {
-			status.Connected = connected
-		}
 		if paused, ok := deviceStatus["paused"].(bool); ok {
 			status.CoreRunning = !paused
-		}
-		if !status.CoreRunning {
-			status.Connected = false
-			status.CPUTemp = 0
-			status.GPUTemp = 0
-			status.CurrentRPM = 0
 		}
 		monitorTrayState.SetStatus(status)
 		return
