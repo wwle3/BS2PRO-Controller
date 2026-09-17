@@ -153,10 +153,8 @@ function setMode(auto: boolean) {
   --dash-mist: rgb(16 185 129 / 0.10);
   --dash-mist-soft: rgb(167 243 208 / 0.05);
   position: absolute;
-  right: -80px;
-  bottom: -120px;
-  width: 860px;
-  height: 560px;
+  inset: 0;
+  overflow: hidden;
   pointer-events: none;
   z-index: 0;
 }
@@ -164,22 +162,27 @@ function setMode(auto: boolean) {
   --dash-mist: rgb(52 211 153 / 0.12);
   --dash-mist-soft: rgb(110 231 183 / 0.05);
 }
-.dash-fog-core,
-.dash-fog-drift {
+.dash-fog i {
   position: absolute;
-  inset: 0;
-  filter: blur(56px);
+  left: 0;
+  top: 0;
+  filter: blur(64px);
 }
 .dash-fog-core {
-  background: radial-gradient(ellipse 88% 76% at 62% 68%, var(--dash-mist) 0%, transparent 78%);
-  animation: dash-fog-breathe 18s ease-in-out infinite;
+  width: 64%;
+  height: 76%;
+  border-radius: 46% 54% 48% 52%;
+  background: radial-gradient(ellipse at 50% 50%, var(--dash-mist) 0%, transparent 68%);
+  animation: dash-fog-breathe 52s ease-in-out infinite;
 }
 .dash-fog-drift {
-  background: radial-gradient(ellipse 96% 84% at 48% 72%, var(--dash-mist-soft) 0%, transparent 82%);
-  animation: dash-fog-shift 26s ease-in-out infinite;
+  width: 58%;
+  height: 68%;
+  border-radius: 58% 42% 52% 48%;
+  background: radial-gradient(ellipse at 50% 50%, var(--dash-mist-soft) 0%, transparent 70%);
+  animation: dash-fog-shift 68s ease-in-out infinite;
 }
-.dashboard-home.offline .dash-fog-core,
-.dashboard-home.offline .dash-fog-drift {
+.dashboard-home.offline .dash-fog i {
   animation-play-state: paused;
 }
 .dash-mode {
@@ -319,16 +322,18 @@ function setMode(auto: boolean) {
 .dark .dash-temp-num.ok, .dark .dash-temp-state.ok { color: #34d399; }
 .dark .dash-temp-num.norm, .dark .dash-temp-state.norm { color: #facc15; }
 @keyframes dash-fog-breathe {
-  0%, 100% { transform: translate(0, 0) scale(1, 1); }
-  50% { transform: translate(10px, -6px) scale(1.03, 0.98); }
+  0%, 100% { transform: translate(-8%, 36%) scale(1.04, 0.94); opacity: 0.88; }
+  25% { transform: translate(60%, -12%) scale(0.92, 1.08); opacity: 1; }
+  50% { transform: translate(-10%, -12%) scale(1.08, 0.9); opacity: 0.78; }
+  75% { transform: translate(58%, 36%) scale(0.96, 1.04); opacity: 0.95; }
 }
 @keyframes dash-fog-shift {
-  0%, 100% { transform: translate(0, 0) scale(1.01, 1); }
-  50% { transform: translate(-12px, 6px) scale(0.98, 1.03); }
+  0%, 100% { transform: translate(78%, -10%) scale(1.02, 1); opacity: 0.72; }
+  32% { transform: translate(-12%, 52%) scale(0.9, 1.12); opacity: 1; }
+  64% { transform: translate(76%, 52%) scale(1.08, 0.94); opacity: 0.7; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .dash-fog-core,
-  .dash-fog-drift { animation: none; }
+  .dash-fog i { animation: none; }
   .dash-track > i { transition: none; }
 }
 </style>
