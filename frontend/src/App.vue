@@ -134,8 +134,8 @@ import AboutView from './views/AboutView.vue'
 import { apiService } from './services/api'
 import { frontendLogger } from './services/frontendLogger'
 import { types } from '../wailsjs/go/models'
-import { HideWindow, QuitApp } from '../wailsjs/go/main/App'
-import { WindowToggleMaximise, WindowIsMaximised } from '../wailsjs/runtime/runtime'
+import { QuitApp } from '../wailsjs/go/main/App'
+import { WindowToggleMaximise, WindowIsMaximised, WindowMinimise } from '../wailsjs/runtime/runtime'
 
 const THEME_STORAGE_KEY = 'theme'
 const THEME_FOLLOW_SYSTEM_KEY = 'theme-follow-system'
@@ -488,7 +488,7 @@ const handleSetRGBMode = async (params: any): Promise<boolean> => {
 const minimizeWindow = () => {
   frontendLogger.info('窗口', '点击最小化')
   lockHoverImmediately()
-  HideWindow().catch((e) => frontendLogger.error('窗口', '最小化失败', e))
+  WindowMinimise()
 }
 const toggleMaximize = () => {
   WindowToggleMaximise()
