@@ -143,6 +143,7 @@ func NewApp(icon []byte) *App {
 // startup 应用启动时调用
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	restoreWindowPosition(ctx)
 	logInfo("GUI 启动", "version", version.Get())
 
 	isAutoStart := false

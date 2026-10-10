@@ -14,3 +14,10 @@ func TestAcceptedWindowSize(t *testing.T) {
 		t.Fatalf("got %d %d %v", w, h, ok)
 	}
 }
+
+func TestWindowPositionForSet(t *testing.T) {
+	x, y := windowPositionForSet(2000, 100, 1920, 0)
+	if x != 80 || y != 100 {
+		t.Fatalf("got %d %d", x, y)
+	}
+}
