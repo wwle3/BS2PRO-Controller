@@ -872,7 +872,8 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 	if err != nil {
 		return err
 	}
-	a.resetFanRuntimeState()
+	// 切换自动/手动只重置下发整形，保留已学习的自动偏移和运行曲线
+	a.resetFanCommandShaper()
 
 	// 修复: 在锁外启动 goroutine，避免 startTemperatureMonitoring 锁竞态
 	if shouldStartMonitor {
