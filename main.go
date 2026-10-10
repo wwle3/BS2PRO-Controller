@@ -88,15 +88,21 @@ func main() {
 	}
 
 	// 启动 Wails 框架
+	size := loadWindowSize()
+	startState := options.Normal
+	if size.Maximised {
+		startState = options.Maximised
+	}
 	err := wails.Run(&options.App{
-		Title:           "BS2PRO-Controller",
-		Width:           900,
-		Height:          620,
-		MinWidth:        900,
-		MinHeight:       620,
-		Frameless:       true,                // 无边框窗口
-		CSSDragProperty: "--wails-draggable", // CSS拖拽属性
-		CSSDragValue:    "drag",              // CSS拖拽值
+		Title:            "BS2PRO-Controller",
+		Width:            size.Width,
+		Height:           size.Height,
+		MinWidth:         windowDefaultWidth,
+		MinHeight:        windowDefaultHeight,
+		WindowStartState: startState,
+		Frameless:        true,                // 无边框窗口
+		CSSDragProperty:  "--wails-draggable", // CSS拖拽属性
+		CSSDragValue:     "drag",              // CSS拖拽值
 
 		// 开机自启时直接藏入托盘，不弹出窗口
 		StartHidden: isAutoStart,

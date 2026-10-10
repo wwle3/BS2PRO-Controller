@@ -397,6 +397,7 @@ func (a *App) ensureMonitorAgentRunningIfNeeded() {
 }
 
 func (a *App) OnWindowClosing(ctx context.Context) bool {
+	saveWindowSize(ctx)
 	logInfo("窗口关闭，直接退出 GUI 进程")
 	return false
 }
@@ -1467,7 +1468,9 @@ func (a *App) ShowWindow() {
 	a.windowVisible = true
 	a.mutex.Unlock()
 
-	runtime.WindowUnminimise(a.ctx)
+	if runtime.WindowIsMinimised(a.ctx) {
+		runtime.WindowUnminimise(a.ctx)
+	}
 	runtime.WindowShow(a.ctx)
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
 	runtime.WindowSetAlwaysOnTop(a.ctx, false)
