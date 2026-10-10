@@ -5,8 +5,8 @@
       <i class="dash-fog-drift" />
     </div>
 
-    <header class="relative z-20 flex items-center justify-between px-9 pt-6">
-      <h2 class="text-xl font-bold tracking-tight text-slate-800 dark:text-white">设备概览</h2>
+    <header class="relative z-20 flex items-start justify-between px-8 pt-8">
+      <h2 class="text-xl font-bold leading-7 tracking-tight text-slate-800 dark:text-white">设备概览</h2>
       <div class="relative">
         <div class="dash-mode" :class="{ 'is-offline': !isConnected }">
           <button type="button" :class="{ on: isSmartFreq }" :disabled="!isConnected" @click="setMode(true)">自动</button>
@@ -89,7 +89,7 @@ const wordmark = computed(() => {
     if (model.includes('BS2PRO')) sku = 'BS2 PRO'
     else if (model.includes('BS2')) sku = 'BS2'
   }
-  return `飞智 ${sku}`
+  return sku
 })
 
 const lastTargetRpm = ref<number | null>(null)
