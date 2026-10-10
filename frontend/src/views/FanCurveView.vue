@@ -1,13 +1,13 @@
 <template>
   <div class="p-8 flex flex-col h-full space-y-6 overflow-hidden panel-two-tone">
-    <header class="shrink-0 flex items-center justify-between">
+    <header class="shrink-0 flex items-start justify-between">
       <div>
-        <h2 class="text-xl font-bold tracking-tight text-slate-800 dark:text-white">风扇曲线配置</h2>
+        <h2 class="text-xl font-bold leading-7 tracking-tight text-slate-800 dark:text-white">风扇曲线配置</h2>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex h-7 items-center gap-2">
         <span v-if="isDragging" class="text-[10px] font-black text-blue-500 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 px-2 py-1 rounded-full uppercase tracking-wider">编辑中</span>
         <span v-if="hasUnsavedChanges" class="text-[10px] font-black text-amber-500 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-2 py-1 rounded-full uppercase tracking-wider">未保存</span>
-        <div class="w-44">
+        <div class="w-44 [&_.relative>button]:h-7">
           <input
             v-if="isRenamingProfile"
             ref="renameInputEl"
@@ -15,7 +15,7 @@
             type="text"
             autofocus
             maxlength="20"
-            class="h-11 w-full rounded-2xl px-4 text-xs font-bold border outline-none cursor-text select-text"
+            class="h-7 w-full rounded-2xl px-4 text-xs font-bold border outline-none cursor-text select-text"
             :class="isDark ? 'bg-white/[0.04] border-white/10 text-slate-200' : 'bg-slate-50 border-slate-100 text-slate-700 shadow-sm'"
             @keyup.enter="submitRenameProfile"
             @keyup.esc="cancelRenameProfile"
@@ -34,7 +34,7 @@
           @click="renameProfile"
           @mousedown="startButtonAnim('rename')"
           :disabled="selectedProfileId === DEVICE_PROFILE_ID"
-          class="fan-curve-action-btn px-3 py-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+          class="fan-curve-action-btn inline-flex h-7 items-center px-3 rounded-xl text-[11px] font-bold transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
           :class="[isDark ? 'surface-tile text-slate-300 hover:text-slate-200 hover:bg-slate-700/30' : 'surface-tile text-slate-600 hover:text-slate-700 hover:bg-slate-200/60', clickedButton === 'rename' ? 'mode-clicked' : '']"
         >
           重命名
@@ -42,7 +42,7 @@
         <button
           @click="createProfile"
           @mousedown="startButtonAnim('create')"
-          class="fan-curve-action-btn px-3 py-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer"
+          class="fan-curve-action-btn inline-flex h-7 items-center px-3 rounded-xl text-[11px] font-bold transition-all cursor-pointer"
           :class="[isDark ? 'surface-tile text-slate-300 hover:text-slate-200 hover:bg-slate-700/30' : 'surface-tile text-slate-600 hover:text-slate-700 hover:bg-slate-200/60', clickedButton === 'create' ? 'mode-clicked' : '']"
         >
           新建
@@ -51,7 +51,7 @@
           @click="deleteProfile"
           @mousedown="startButtonAnim('delete')"
           :disabled="selectedProfileId === DEVICE_PROFILE_ID"
-          class="fan-curve-action-btn px-3 py-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+          class="fan-curve-action-btn inline-flex h-7 items-center px-3 rounded-xl text-[11px] font-bold transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
           :class="[isDark ? 'surface-tile text-slate-300 hover:text-slate-200 hover:bg-slate-700/30' : 'surface-tile text-slate-600 hover:text-slate-700 hover:bg-slate-200/60', clickedButton === 'delete' ? 'mode-clicked' : '']"
         >
           删除
