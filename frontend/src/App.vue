@@ -92,7 +92,8 @@
           :is-smart-freq="config.autoControl"
           :fan-data="fanData" :temperature="temperature"
           :config="config"
-          @update:is-smart-freq="handleAutoControlChange" />
+          @update:is-smart-freq="handleAutoControlChange"
+          @config-change="handleConfigChange" />
         <RGBLightView v-else-if="currentView === 'rgb-light'"
           :is-dark="isDark" :is-connected="isConnected"
           :saved-config="config.rgbConfig || null"

@@ -5,11 +5,19 @@
       <i class="dash-fog-drift" />
     </div>
 
-    <header class="relative z-10 flex items-center justify-between px-9 pt-6">
+    <header class="relative z-20 flex items-center justify-between px-9 pt-6">
       <h2 class="text-xl font-bold tracking-tight text-slate-800 dark:text-white">设备概览</h2>
-      <div class="dash-mode" :class="{ 'is-offline': !isConnected }">
-        <button type="button" :class="{ on: isSmartFreq }" :disabled="!isConnected" @click="setMode(true)">自动</button>
-        <button type="button" :class="{ on: !isSmartFreq }" :disabled="!isConnected" @click="setMode(false)">手动</button>
+      <div class="relative">
+        <div class="dash-mode" :class="{ 'is-offline': !isConnected }">
+          <button type="button" :class="{ on: isSmartFreq }" :disabled="!isConnected" @click="setMode(true)">自动</button>
+          <button type="button" :class="{ on: !isSmartFreq }" :disabled="!isConnected" @click="setMode(false)">手动</button>
+        </div>
+        <div v-if="!isSmartFreq" class="dash-mode absolute top-full right-0 mt-2" :class="{ 'is-offline': !isConnected || config.customSpeedEnabled }">
+          <button v-for="gear in basicGears" :key="gear" type="button"
+                  :class="{ on: config.manualGear === gear }"
+                  :disabled="!isConnected || config.customSpeedEnabled"
+                  @click="setGear(gear)">{{ gear }}</button>
+        </div>
       </div>
     </header>
     <div class="dash-model relative z-10 px-9 pt-6">{{ wordmark }}</div>
@@ -55,6 +63,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { types } from '../../wailsjs/go/models'
+import { apiService } from '../services/api'
+import { frontendLogger } from '../services/frontendLogger'
 
 interface Props {
   isConnected: boolean
@@ -66,7 +76,8 @@ interface Props {
   config: types.AppConfig
 }
 const props = defineProps<Props>()
-const emit = defineEmits<{ 'update:isSmartFreq': [v: boolean] }>()
+const emit = defineEmits<{ 'update:isSmartFreq': [v: boolean]; 'config-change': [config: types.AppConfig] }>()
+const basicGears = ['静音', '标准', '强劲', '超频']
 
 const wordmark = computed(() => {
   const pid = (props.deviceProductId || '').toLowerCase()
@@ -141,6 +152,14 @@ const metaParts = computed(() => {
 function setMode(auto: boolean) {
   if (!props.isConnected || auto === props.isSmartFreq) return
   emit('update:isSmartFreq', auto)
+}
+
+async function setGear(gear: string) {
+  if (!props.isConnected || props.isSmartFreq || props.config.customSpeedEnabled || gear === props.config.manualGear) return
+  try {
+    await apiService.setManualGear(gear, props.config.manualLevel || '中')
+    emit('config-change', types.AppConfig.createFrom({ ...props.config, manualGear: gear }))
+  } catch (e) { frontendLogger.error('设备概览', '切换预设模式失败', e) }
 }
 </script>
 
