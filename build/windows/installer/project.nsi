@@ -378,7 +378,6 @@ Function .onInit
     # 设置快捷方式组件默认选中
    SectionSetFlags ${SEC_STARTMENU} 1
    SectionSetFlags ${SEC_DESKTOP} 1
-   SectionSetFlags ${SEC_AUTOSTART} 1
 FunctionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
