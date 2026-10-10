@@ -267,6 +267,14 @@ export namespace types {
 	    fanCurveOffsetEnabled: boolean;
 	    rgbConfig?: RGBConfig;
 	    hotkeyConflicts?: HotkeyConflict[];
+	    windowWidth: number;
+	    windowHeight: number;
+	    windowMaximised: boolean;
+	    windowX: number;
+	    windowY: number;
+	    windowHasPosition: boolean;
+	    themeFollowSystem: boolean;
+	    themeMode: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppConfig(source);
@@ -298,6 +306,14 @@ export namespace types {
 	        this.fanCurveOffsetEnabled = source["fanCurveOffsetEnabled"];
 	        this.rgbConfig = this.convertValues(source["rgbConfig"], RGBConfig);
 	        this.hotkeyConflicts = this.convertValues(source["hotkeyConflicts"], HotkeyConflict);
+	        this.windowWidth = source["windowWidth"];
+	        this.windowHeight = source["windowHeight"];
+	        this.windowMaximised = source["windowMaximised"];
+	        this.windowX = source["windowX"];
+	        this.windowY = source["windowY"];
+	        this.windowHasPosition = source["windowHasPosition"];
+	        this.themeFollowSystem = source["themeFollowSystem"];
+	        this.themeMode = source["themeMode"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

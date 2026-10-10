@@ -2,6 +2,36 @@ package types
 
 import "testing"
 
+func TestRepairKeepsWindowAndTheme(t *testing.T) {
+	cfg := GetDefaultConfig(false)
+	cfg.WindowWidth = 900
+	cfg.WindowHeight = 641
+	cfg.WindowMaximised = true
+	cfg.WindowHasPosition = true
+	cfg.WindowX = 12
+	cfg.WindowY = -4
+	cfg.ThemeFollowSystem = false
+	cfg.ThemeMode = "dark"
+	cfg.Repair()
+	if cfg.WindowWidth != 900 || cfg.WindowHeight != 641 || !cfg.WindowMaximised || !cfg.WindowHasPosition || cfg.WindowX != 12 || cfg.WindowY != -4 {
+		t.Fatalf("window pref changed: %+v", cfg)
+	}
+	if cfg.ThemeFollowSystem || cfg.ThemeMode != "dark" {
+		t.Fatalf("theme pref changed: %+v", cfg)
+	}
+}
+
+func TestRepairFillsEmptyWindowAndTheme(t *testing.T) {
+	cfg := GetDefaultConfig(false)
+	cfg.WindowWidth = 0
+	cfg.WindowHeight = 0
+	cfg.ThemeMode = ""
+	cfg.Repair()
+	if cfg.WindowWidth != DefaultWindowWidth || cfg.WindowHeight != DefaultWindowHeight || cfg.ThemeMode != "light" {
+		t.Fatalf("defaults not filled: %+v", cfg)
+	}
+}
+
 func TestMonitorRequired(t *testing.T) {
 	cfg := GetDefaultConfig(false)
 	cfg.TrayEnabled = false

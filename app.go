@@ -398,7 +398,7 @@ func (a *App) ensureMonitorAgentRunningIfNeeded() {
 }
 
 func (a *App) OnWindowClosing(ctx context.Context) bool {
-	saveWindowSize(ctx)
+	a.saveWindowSize(ctx)
 	logInfo("窗口关闭，直接退出 GUI 进程")
 	return false
 }
@@ -596,7 +596,38 @@ func (a *App) sendRequest(reqType ipc.RequestType, data any) (*ipc.Response, err
 func (a *App) GetAppVersion() string { return version.Get() }
 
 func (a *App) SaveThemePreference(followSystem bool, mode string) error {
-	return saveThemePreference(ThemePreference{FollowSystem: followSystem, Mode: mode})
+	return a.saveThemePreference(ThemePreference{FollowSystem: followSystem, Mode: mode})
+}
+
+func (a *App) persistConfigPatch(mut func(*types.AppConfig)) error {
+	resp, err := a.sendRequest(ipc.ReqGetConfig, nil)
+	if err == nil && resp != nil && resp.Success {
+		var cfg types.AppConfig
+		if json.Unmarshal(resp.Data, &cfg) == nil {
+			mut(&cfg)
+			if err := a.UpdateConfig(cfg); err == nil {
+				return nil
+			}
+		}
+	}
+	return writeConfigFile(mut)
+}
+
+func writeConfigFile(mut func(*types.AppConfig)) error {
+	path := config.DefaultConfigPath(config.GetInstallDir())
+	cfg := types.GetDefaultConfig(false)
+	if data, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(data, &cfg)
+	}
+	mut(&cfg)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }
 
 func (a *App) ConnectDevice() bool {
@@ -1497,6 +1528,9 @@ func (a *App) HideWindow() {
 
 func (a *App) QuitApp() {
 	logInfo("控制台请求退出")
+	if a.ctx != nil {
+		a.saveWindowSize(a.ctx)
+	}
 	if a.ipcClient != nil {
 		a.ipcClient.Close()
 	}

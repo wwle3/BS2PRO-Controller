@@ -223,3 +223,11 @@ func GetLogDir() string {
 	// 回落：ProgramData环境变量不存在时用硬编码路径
 	return `C:\ProgramData\BS2PRO-Controller\logs`
 }
+
+func DefaultConfigPath(installDir string) string {
+	programData := os.Getenv("PROGRAMDATA")
+	if programData == "" {
+		return filepath.Join(installDir, "config", "config.json")
+	}
+	return filepath.Join(programData, "BS2PRO-Controller", "config.json")
+}

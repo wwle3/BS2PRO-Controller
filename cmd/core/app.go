@@ -118,9 +118,9 @@ func NewCoreApp(debugMode bool) *CoreApp {
 		lastDeviceMode:     "",
 		userSetAutoControl: false,
 		debugMode:          debugMode,
-		fanOffsetCtrl:    fanOffsetCtrl,
-		fanCommandShaper: commandShaper,
-		cleanupChan:      make(chan bool, 1),
+		fanOffsetCtrl:      fanOffsetCtrl,
+		fanCommandShaper:   commandShaper,
+		cleanupChan:        make(chan bool, 1),
 		lastSmartModeLevel: 0,
 	}
 	app.notificationManager = notification.NewManager(func() bool {
@@ -760,6 +760,18 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	offsetChanged := oldCfg.FanCurveOffsetEnabled != cfg.FanCurveOffsetEnabled
 	cfg.ConfigPath = oldCfg.ConfigPath
 	cfg.HotkeyConflicts = append([]types.HotkeyConflict{}, a.systemHotkeyConflicts...)
+	if cfg.WindowWidth < types.DefaultWindowWidth || cfg.WindowHeight < types.DefaultWindowHeight {
+		cfg.WindowWidth = oldCfg.WindowWidth
+		cfg.WindowHeight = oldCfg.WindowHeight
+		cfg.WindowMaximised = oldCfg.WindowMaximised
+		cfg.WindowX = oldCfg.WindowX
+		cfg.WindowY = oldCfg.WindowY
+		cfg.WindowHasPosition = oldCfg.WindowHasPosition
+	}
+	if cfg.ThemeMode != "dark" && cfg.ThemeMode != "light" {
+		cfg.ThemeFollowSystem = oldCfg.ThemeFollowSystem
+		cfg.ThemeMode = oldCfg.ThemeMode
+	}
 	err := a.configManager.Update(cfg)
 	a.mutex.Unlock()
 	if err != nil {

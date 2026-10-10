@@ -4,26 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"unsafe"
 
 	"github.com/TIANLI0/BS2PRO-Controller/internal/config"
+	"github.com/TIANLI0/BS2PRO-Controller/internal/types"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
 )
 
 const (
-	windowDefaultWidth  = 900
-	windowDefaultHeight = 620
+	windowDefaultWidth  = types.DefaultWindowWidth
+	windowDefaultHeight = types.DefaultWindowHeight
 )
 
 type windowSizePreference struct {
-	Width       int  `json:"width"`
-	Height      int  `json:"height"`
-	Maximised   bool `json:"maximised"`
-	X           int  `json:"x"`
-	Y           int  `json:"y"`
-	HasPosition bool `json:"hasPosition"`
+	Width       int
+	Height      int
+	Maximised   bool
+	X           int
+	Y           int
+	HasPosition bool
 }
 
 var (
@@ -47,14 +47,6 @@ func defaultWindowSize() windowSizePreference {
 	return windowSizePreference{Width: windowDefaultWidth, Height: windowDefaultHeight}
 }
 
-func windowSizePath() string {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return filepath.Join(config.GetInstallDir(), "window-size.json")
-	}
-	return filepath.Join(configDir, "BS2PRO-Controller", "window-size.json")
-}
-
 func acceptedWindowSize(width, height int) (int, int, bool) {
 	if width < windowDefaultWidth || height < windowDefaultHeight {
 		return 0, 0, false
@@ -62,14 +54,23 @@ func acceptedWindowSize(width, height int) (int, int, bool) {
 	return width, height, true
 }
 
-func loadWindowSize() windowSizePreference {
-	data, err := os.ReadFile(windowSizePath())
+func readStoredConfig() types.AppConfig {
+	cfg := types.GetDefaultConfig(false)
+	data, err := os.ReadFile(config.DefaultConfigPath(config.GetInstallDir()))
 	if err != nil {
-		return defaultWindowSize()
+		return cfg
 	}
-	pref := defaultWindowSize()
-	if err := json.Unmarshal(data, &pref); err != nil {
-		return defaultWindowSize()
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return types.GetDefaultConfig(false)
+	}
+	return cfg
+}
+
+func loadWindowSize() windowSizePreference {
+	cfg := readStoredConfig()
+	pref := windowSizePreference{
+		Width: cfg.WindowWidth, Height: cfg.WindowHeight, Maximised: cfg.WindowMaximised,
+		X: cfg.WindowX, Y: cfg.WindowY, HasPosition: cfg.WindowHasPosition,
 	}
 	if _, _, ok := acceptedWindowSize(pref.Width, pref.Height); !ok {
 		return defaultWindowSize()
@@ -77,36 +78,33 @@ func loadWindowSize() windowSizePreference {
 	return pref
 }
 
-func saveWindowSize(ctx context.Context) {
+func (a *App) saveWindowSize(ctx context.Context) {
 	if ctx == nil || runtime.WindowIsMinimised(ctx) || runtime.WindowIsFullscreen(ctx) {
 		return
 	}
-	next := loadWindowSize()
-	if runtime.WindowIsMaximised(ctx) {
-		next.Maximised = true
-	} else {
-		width, height := runtime.WindowGetSize(ctx)
-		width, height, ok := acceptedWindowSize(width, height)
+	maximised := runtime.WindowIsMaximised(ctx)
+	width, height, ok := 0, 0, false
+	x, y := 0, 0
+	if !maximised {
+		width, height = runtime.WindowGetSize(ctx)
+		width, height, ok = acceptedWindowSize(width, height)
 		if !ok {
 			return
 		}
-		next.Width = width
-		next.Height = height
-		next.Maximised = false
-		x, y := runtime.WindowGetPosition(ctx)
-		next.X = x
-		next.Y = y
-		next.HasPosition = true
+		x, y = runtime.WindowGetPosition(ctx)
 	}
-	path := windowSizePath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
-	data, err := json.Marshal(next)
-	if err != nil {
-		return
-	}
-	_ = os.WriteFile(path, data, 0o644)
+	_ = a.persistConfigPatch(func(cfg *types.AppConfig) {
+		if maximised {
+			cfg.WindowMaximised = true
+			return
+		}
+		cfg.WindowWidth = width
+		cfg.WindowHeight = height
+		cfg.WindowMaximised = false
+		cfg.WindowX = x
+		cfg.WindowY = y
+		cfg.WindowHasPosition = true
+	})
 }
 
 func restoreWindowPosition(ctx context.Context) {

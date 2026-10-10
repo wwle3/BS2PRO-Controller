@@ -99,7 +99,20 @@ type AppConfig struct {
 	FanCurveOffsetEnabled   bool             `json:"fanCurveOffsetEnabled"`   // 风扇曲线偏移开关
 	RGBConfig               *RGBConfig       `json:"rgbConfig"`               // RGB灯效配置
 	HotkeyConflicts         []HotkeyConflict `json:"hotkeyConflicts,omitempty"`
+	WindowWidth             int              `json:"windowWidth"`       // 主窗口宽度
+	WindowHeight            int              `json:"windowHeight"`      // 主窗口高度
+	WindowMaximised         bool             `json:"windowMaximised"`   // 主窗口是否最大化
+	WindowX                 int              `json:"windowX"`           // 主窗口屏幕坐标 X
+	WindowY                 int              `json:"windowY"`           // 主窗口屏幕坐标 Y
+	WindowHasPosition       bool             `json:"windowHasPosition"` // 是否已记住位置
+	ThemeFollowSystem       bool             `json:"themeFollowSystem"` // 主题跟随系统
+	ThemeMode               string           `json:"themeMode"`         // 主题 light 或 dark
 }
+
+const (
+	DefaultWindowWidth  = 900
+	DefaultWindowHeight = 620
+)
 
 type HotkeyConfig struct {
 	Enabled bool            `json:"enabled"`
@@ -210,6 +223,10 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		CustomSpeedRPM:          2000,
 		IgnoreDeviceOnReconnect: true, // 默认开启，防止断连后误判用户手动切换
 		FanCurveOffsetEnabled:   false,
+		WindowWidth:             DefaultWindowWidth,
+		WindowHeight:            DefaultWindowHeight,
+		ThemeFollowSystem:       true,
+		ThemeMode:               "light",
 		RGBConfig: &RGBConfig{
 			Mode:       "smart",
 			Colors:     []RGBColorConfig{{R: 0, G: 0, B: 255}, {R: 255, G: 0, B: 0}, {R: 0, G: 255, B: 0}},
@@ -360,6 +377,13 @@ func (c *AppConfig) Repair() {
 	}
 	if c.CustomSpeedRPM <= 0 {
 		c.CustomSpeedRPM = defaultCfg.CustomSpeedRPM
+	}
+	if c.WindowWidth < DefaultWindowWidth || c.WindowHeight < DefaultWindowHeight {
+		c.WindowWidth = defaultCfg.WindowWidth
+		c.WindowHeight = defaultCfg.WindowHeight
+	}
+	if c.ThemeMode != "dark" && c.ThemeMode != "light" {
+		c.ThemeMode = defaultCfg.ThemeMode
 	}
 
 	if c.RGBConfig == nil {
