@@ -34,7 +34,7 @@ jobs:
     runs-on: windows-latest
 
     env:
-      GO_VERSION: "1.27.1"
+      GO_VERSION: "1.27.2"
       NODE_VERSION: "20"
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
