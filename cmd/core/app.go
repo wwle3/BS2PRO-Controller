@@ -288,6 +288,9 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) (res ipc.Response) {
 			return a.errorResponse(err.Error())
 		}
 		return a.successResponse(true)
+	case ipc.ReqResetFanOffset:
+		a.ResetFanOffset()
+		return a.successResponse(true)
 	case ipc.ReqSetAutoControl:
 		var params ipc.SetAutoControlParams
 		if err := json.Unmarshal(req.Data, &params); err != nil {
@@ -676,8 +679,7 @@ func (a *CoreApp) ConnectDevice() bool {
 		}
 		a.mutex.Unlock()
 
-		// 重置风扇运行态控制器
-		a.resetFanRuntimeState()
+		a.resetFanCommandShaper()
 
 		if deviceInfo != nil && a.ipcServer != nil {
 			a.ipcServer.BroadcastEvent(ipc.EventDeviceConnected, deviceInfo)
@@ -713,8 +715,7 @@ func (a *CoreApp) DisconnectDevice() {
 	a.lastDeviceMode = ""
 	a.mutex.Unlock()
 
-	// 重置风扇运行态控制器
-	a.resetFanRuntimeState()
+	a.resetFanCommandShaper()
 	if fd := a.deviceManager.GetCurrentFanData(); fd != nil {
 		a.logInfo("DisconnectDevice 前设备状态", "mode", fd.WorkMode, "current_rpm", fd.CurrentRPM, "target_rpm", fd.TargetRPM)
 	} else {
@@ -846,6 +847,11 @@ func (a *CoreApp) ApplyOffsetToCurve() error {
 	a.broadcastConfigUpdate(cfg)
 	a.broadcastVisibleFanCurve(cfg.FanCurve)
 	return nil
+}
+
+func (a *CoreApp) ResetFanOffset() {
+	a.resetFanRuntimeState()
+	a.broadcastVisibleFanCurve(a.configManager.Get().FanCurve)
 }
 
 func (a *CoreApp) emitNotification(req notification.Request) {

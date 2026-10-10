@@ -46,6 +46,8 @@ export function LogFrontendError(arg1:string,arg2:string,arg3:string,arg4:string
 
 export function QuitApp():Promise<void>;
 
+export function ResetFanOffset():Promise<void>;
+
 export function RestartCoreService():Promise<boolean>;
 
 export function ResumeCoreService():Promise<boolean>;

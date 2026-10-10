@@ -34,13 +34,13 @@ const (
 	ReqGetCurrentFanData RequestType = "GetCurrentFanData"
 
 	// 配置相关
-	ReqGetConfig               RequestType = "GetConfig"
-	ReqUpdateConfig            RequestType = "UpdateConfig"
-	ReqSetFanCurve             RequestType = "SetFanCurve"
+	ReqGetConfig             RequestType = "GetConfig"
+	ReqUpdateConfig          RequestType = "UpdateConfig"
+	ReqSetFanCurve           RequestType = "SetFanCurve"
 	ReqGetFanCurve           RequestType = "GetFanCurve"
 	ReqRegisterClient        RequestType = "RegisterClient"
-	ReqNotifyImportCompleted   RequestType = "NotifyImportCompleted"
-	ReqNotifyExportCompleted   RequestType = "NotifyExportCompleted"
+	ReqNotifyImportCompleted RequestType = "NotifyImportCompleted"
+	ReqNotifyExportCompleted RequestType = "NotifyExportCompleted"
 
 	// 控制相关
 	ReqSetAutoControl    RequestType = "SetAutoControl"
@@ -71,6 +71,7 @@ const (
 
 	// 风扇偏移
 	ReqApplyOffsetToCurve RequestType = "ApplyOffsetToCurve"
+	ReqResetFanOffset     RequestType = "ResetFanOffset"
 
 	// RGB 灯效控制
 	ReqSetRGBMode            RequestType = "SetRGBMode"

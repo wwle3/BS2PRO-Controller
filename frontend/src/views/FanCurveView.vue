@@ -665,7 +665,7 @@ function cancelChanges() {
   localCurve.value = cloneCurve(getCurrentProfileBaseline())
   refreshUnsavedFlag()
 }
-function resetCurve() {
+async function resetCurve() {
   const m = rpmMax.value
   localCurve.value = [
     { temperature: 30, rpm: 500, offset: 0 }, { temperature: 35, rpm: 1200, offset: 0 },
@@ -677,6 +677,12 @@ function resetCurve() {
     { temperature: 90, rpm: m, offset: 0 }, { temperature: 95, rpm: m, offset: 0 },
     { temperature: 100, rpm: m, offset: 0 },
   ].map(p => types.FanCurvePoint.createFrom(p))
+  refreshUnsavedFlag()
+  try {
+    await apiService.resetFanOffset()
+  } catch (e) {
+    frontendLogger.error('风扇曲线', '重置偏移失败', e)
+  }
   refreshUnsavedFlag()
 }
 function exportConfig() {

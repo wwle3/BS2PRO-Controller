@@ -13,6 +13,7 @@ import {
   GetFanCurveProfileConfigs,
   ImportFanCurveProfilesZip,
   ApplyOffsetToCurve,
+  ResetFanOffset,
   SetAutoControl,
   GetAppVersion,
   SetManualGear,
@@ -97,6 +98,10 @@ class ApiService {
 
   async applyOffsetToCurve(): Promise<void> {
     return await ApplyOffsetToCurve();
+  }
+
+  async resetFanOffset(): Promise<void> {
+    return await ResetFanOffset();
   }
 
   // 智能变频
