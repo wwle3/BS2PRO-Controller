@@ -144,13 +144,16 @@
       <!-- 底部操作栏 -->
       <div class="mt-4 flex items-center justify-between border-t border-slate-100/10 dark:border-slate-700/20 pt-4 px-6 pb-5 relative z-10 shrink-0">
         <div class="flex items-center space-x-2">
-          <button @click="saveCurve" @mousedown="startButtonAnim('save')" :disabled="!hasUnsavedChanges || isSaving || !isConnected"
+          <button v-if="hasUnsavedChanges" @click="saveCurve" @mousedown="startButtonAnim('save')" :disabled="isSaving || !isConnected"
                   class="fan-curve-action-btn flex items-center space-x-2 px-6 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                  :class="[hasUnsavedChanges && isConnected
+                  :class="[isConnected
                     ? (isDark ? 'surface-tile text-slate-300 hover:text-slate-200 hover:bg-slate-700/30' : 'surface-tile text-slate-600 hover:text-slate-700 hover:bg-slate-200/60')
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-400', clickedButton === 'save' ? 'mode-clicked' : '']">
-            <span>{{ isSaving ? '保存中...' : '保存配置' }}</span>
+            <span>{{ isSaving ? '保存中...' : '保存' }}</span>
           </button>
+          <button v-if="hasUnsavedChanges" @click="cancelChanges" @mousedown="startButtonAnim('cancel')"
+                  class="fan-curve-action-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  :class="[isDark ? 'surface-tile text-slate-300 hover:text-slate-200 hover:bg-slate-700/30' : 'surface-tile text-slate-600 hover:text-slate-700 hover:bg-slate-200/60', clickedButton === 'cancel' ? 'mode-clicked' : '']">取消</button>
           <button @click="applyOffsetCurve" @mousedown="startButtonAnim('apply-offset')" :disabled="isApplyingOffset || !isConnected || !config.fanCurveOffsetEnabled"
                   class="fan-curve-action-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                   :class="[isConnected && config.fanCurveOffsetEnabled
@@ -158,9 +161,6 @@
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-400', clickedButton === 'apply-offset' ? 'mode-clicked' : '']">
             {{ isApplyingOffset ? '应用中...' : '应用偏移' }}
           </button>
-          <button @click="cancelChanges" @mousedown="startButtonAnim('cancel')" :disabled="!hasUnsavedChanges"
-                  class="fan-curve-action-btn px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                  :class="[isDark ? 'surface-tile text-slate-300 hover:text-slate-200 hover:bg-slate-700/30' : 'surface-tile text-slate-600 hover:text-slate-700 hover:bg-slate-200/60', clickedButton === 'cancel' ? 'mode-clicked' : '']">取消</button>
           <button @click="resetCurve" @mousedown="startButtonAnim('reset')"
                   class="fan-curve-action-btn flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
                   :class="[isDark ? 'surface-tile text-slate-300 hover:text-slate-200 hover:bg-slate-700/30' : 'surface-tile text-slate-600 hover:text-slate-700 hover:bg-slate-200/60', clickedButton === 'reset' ? 'mode-clicked' : '']">
