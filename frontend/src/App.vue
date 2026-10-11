@@ -201,7 +201,6 @@ let unsubCoreServiceConnected: (() => void) | null = null
 let unsubCoreServiceError: (() => void) | null = null
 let unsubCoreStatusUpdate: (() => void) | null = null
 let unsubWindowShown: (() => void) | null = null
-let clearHoverTimer: number | null = null
 let hoverUnlockHandler: ((e: Event) => void) | null = null
 let systemThemeChangeHandler: ((event: MediaQueryListEvent) => void) | null = null
 let systemThemeLegacyChangeHandler: ((event: MediaQueryListEvent) => void) | null = null
@@ -265,10 +264,6 @@ const detachHoverUnlockListeners = () => {
 
 const releaseHoverLock = () => {
   document.documentElement.classList.remove('disable-hover')
-  if (clearHoverTimer) {
-    window.clearTimeout(clearHoverTimer)
-    clearHoverTimer = null
-  }
   detachHoverUnlockListeners()
 }
 
@@ -280,7 +275,10 @@ const clearStickyHover = () => {
   detachHoverUnlockListeners()
   document.documentElement.classList.add('disable-hover')
   forceHoverReset()
-  requestAnimationFrame(() => forceHoverReset())
+  requestAnimationFrame(() => {
+    forceHoverReset()
+    requestAnimationFrame(() => releaseHoverLock())
+  })
 
   hoverUnlockHandler = (e: Event) => {
     if (e.type === 'mousemove') {
@@ -293,18 +291,19 @@ const clearStickyHover = () => {
   window.addEventListener('mousedown', hoverUnlockHandler)
   window.addEventListener('wheel', hoverUnlockHandler)
   window.addEventListener('keydown', hoverUnlockHandler)
-
-  if (clearHoverTimer) window.clearTimeout(clearHoverTimer)
-  clearHoverTimer = window.setTimeout(() => {
-    releaseHoverLock()
-  }, 3000)
 }
 
 const onVisibilityChange = () => {
-  if (document.hidden) lockHoverImmediately()
+  if (document.hidden) {
+    lockHoverImmediately()
+    return
+  }
+  clearStickyHover()
 }
 const onFocus = () => {
   void syncWindowMaxState()
+  if (document.hidden || !document.documentElement.classList.contains('disable-hover')) return
+  clearStickyHover()
 }
 const onResize = () => {
   void syncWindowMaxState()
@@ -413,10 +412,6 @@ onUnmounted(() => {
   unsubFanData?.(); unsubTemperature?.(); unsubConnected?.()
   unsubDisconnected?.(); unsubConfigUpdate?.(); unsubCoreServiceConnected?.(); unsubCoreServiceError?.()
   unsubCoreStatusUpdate?.(); unsubWindowShown?.()
-  if (clearHoverTimer) {
-    window.clearTimeout(clearHoverTimer)
-    clearHoverTimer = null
-  }
   detachHoverUnlockListeners()
   document.documentElement.classList.remove('disable-hover')
   document.removeEventListener('visibilitychange', onVisibilityChange)
