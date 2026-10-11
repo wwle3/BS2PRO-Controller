@@ -270,7 +270,7 @@ function ensureCurve(curve: types.FanCurvePoint[]) {
 
 function curvesEqual(a: types.FanCurvePoint[], b: types.FanCurvePoint[]) {
   if (a.length !== b.length) return false
-  return a.every((p, i) => p.temperature === b[i].temperature && p.rpm === b[i].rpm && (p.offset || 0) === (b[i].offset || 0))
+  return a.every((p, i) => p.temperature === b[i].temperature && p.rpm === b[i].rpm)
 }
 
 function getCurrentProfileBaseline() {
