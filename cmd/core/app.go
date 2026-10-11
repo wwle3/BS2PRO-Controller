@@ -545,7 +545,7 @@ func (a *CoreApp) scheduleReconnect(gen int32) {
 		}
 		a.mutex.RLock()
 		defer a.mutex.RUnlock()
-		return a.isConnected || a.userDisconnected
+		return a.isConnected || a.userDisconnected || a.corePaused
 	}
 
 	tryConnect := func() bool {
@@ -662,41 +662,51 @@ func (a *CoreApp) ConnectDevice() bool {
 		a.logInfo("核心处于暂停状态，跳过设备连接")
 		return false
 	}
-	a.mutex.Lock()
-	a.userDisconnected = false
-	a.mutex.Unlock()
 
 	success, deviceInfo := a.deviceManager.Connect()
-	if success {
-		a.mutex.Lock()
-		a.isConnected = true
-		a.deviceModel = "BS2PRO"
-		a.deviceProductID = ""
-		if deviceInfo != nil {
-			if m, ok := deviceInfo["model"]; ok && strings.TrimSpace(m) != "" {
-				a.deviceModel = m
-			}
-			if pid, ok := deviceInfo["productId"]; ok {
-				a.deviceProductID = pid
-			}
-		}
+
+	a.mutex.Lock()
+	if a.corePaused {
+		a.userDisconnected = true
 		a.mutex.Unlock()
-
-		a.resetFanCommandShaper()
-
-		if deviceInfo != nil && a.ipcServer != nil {
-			a.ipcServer.BroadcastEvent(ipc.EventDeviceConnected, deviceInfo)
+		if success {
+			a.deviceManager.Disconnect()
 		}
-		if wasDisconnected && a.notificationManager != nil {
-			a.notificationManager.OnDeviceReconnected()
-		}
-
-		go a.startTemperatureMonitoring()
-		a.applyConfigOnConnect()
-	} else if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "连接失败")
+		return false
 	}
-	return success
+	if !success {
+		a.mutex.Unlock()
+		if a.ipcServer != nil {
+			a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "连接失败")
+		}
+		return false
+	}
+	a.userDisconnected = false
+	a.isConnected = true
+	a.deviceModel = "BS2PRO"
+	a.deviceProductID = ""
+	if deviceInfo != nil {
+		if m, ok := deviceInfo["model"]; ok && strings.TrimSpace(m) != "" {
+			a.deviceModel = m
+		}
+		if pid, ok := deviceInfo["productId"]; ok {
+			a.deviceProductID = pid
+		}
+	}
+	a.mutex.Unlock()
+
+	a.resetFanCommandShaper()
+
+	if deviceInfo != nil && a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventDeviceConnected, deviceInfo)
+	}
+	if wasDisconnected && a.notificationManager != nil {
+		a.notificationManager.OnDeviceReconnected()
+	}
+
+	go a.startTemperatureMonitoring()
+	a.applyConfigOnConnect()
+	return true
 }
 
 func (a *CoreApp) DisconnectDevice() {
@@ -967,25 +977,33 @@ func (a *CoreApp) applyCurrentGearSetting() {
 
 func (a *CoreApp) SetManualGear(gear, level string) bool {
 	cfg := a.configManager.Get()
+	if !a.isConnected {
+		cfg.ManualGear = gear
+		cfg.ManualLevel = level
+		if err := a.configManager.Update(cfg); err != nil {
+			a.logError("保存手动挡位配置失败", "gear", gear, "level", level, "error", err)
+			return false
+		}
+		return true
+	}
+
+	if !a.deviceManager.SetManualGear(gear, level) {
+		a.logError("手动挡位下发失败", "gear", gear, "level", level, "connected", a.isConnected)
+		return false
+	}
+
 	cfg.ManualGear = gear
 	cfg.ManualLevel = level
 	if err := a.configManager.Update(cfg); err != nil {
 		a.logError("保存手动挡位配置失败", "gear", gear, "level", level, "error", err)
 	}
 
-	success := a.deviceManager.SetManualGear(gear, level)
-	if !success {
-		a.logError("手动挡位下发失败", "gear", gear, "level", level, "connected", a.isConnected)
-	}
-
 	// 当用户主动点击按钮切换到 手动低/中/高时，硬件必定会重置状态
-	if success && a.isConnected {
-		a.safeGo("restoreCurrentRGB-manualGear", func() {
-			time.Sleep(200 * time.Millisecond)
-			a.restoreCurrentRGB()
-		})
-	}
-	return success
+	a.safeGo("restoreCurrentRGB-manualGear", func() {
+		time.Sleep(200 * time.Millisecond)
+		a.restoreCurrentRGB()
+	})
+	return true
 }
 
 func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
@@ -1024,6 +1042,10 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 				a.logError("设置自定义转速失败", "rpm", rpm, "stage", "user_apply")
 			}
 		})
+	} else if isConnected && !cfg.AutoControl && cfg.ManualGear != "" && cfg.ManualLevel != "" {
+		if !a.deviceManager.SetManualGear(cfg.ManualGear, cfg.ManualLevel) {
+			a.logError("关闭自定义转速后恢复手动挡失败", "gear", cfg.ManualGear, "level", cfg.ManualLevel)
+		}
 	}
 
 	a.broadcastConfigUpdate(cfg)
@@ -1038,17 +1060,26 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	return err
 }
 
-func (a *CoreApp) applyDeviceFlag(action string, deviceCall func() bool, updateCfg func(*types.AppConfig), args ...any) bool {
+func (a *CoreApp) applyDeviceFlag(action string, deviceCall func() bool, updateCfg func(*types.AppConfig), restoreDevice func(types.AppConfig) bool, args ...any) bool {
+	oldCfg := a.configManager.Get()
 	if !deviceCall() {
 		logArgs := append([]any{"action", action}, args...)
 		a.logError("设备设置下发失败", logArgs...)
 		return false
 	}
-	cfg := a.configManager.Get()
+	cfg := oldCfg
 	updateCfg(&cfg)
 	if err := a.configManager.Update(cfg); err != nil {
 		logArgs := append(append([]any{"action", action}, args...), "error", err)
 		a.logError("保存设备设置配置失败", logArgs...)
+		if rbErr := a.configManager.Update(oldCfg); rbErr != nil {
+			rbArgs := append(append([]any{"action", action}, args...), "error", rbErr)
+			a.logError("回滚设备设置配置失败", rbArgs...)
+		}
+		if !restoreDevice(oldCfg) {
+			a.logError("回滚设备设置失败", append([]any{"action", action}, args...)...)
+		}
+		return false
 	}
 	a.broadcastConfigUpdate(cfg)
 	return true
@@ -1059,6 +1090,7 @@ func (a *CoreApp) SetGearLight(enabled bool) bool {
 		"gear_light",
 		func() bool { return a.deviceManager.SetGearLight(enabled) },
 		func(cfg *types.AppConfig) { cfg.GearLight = enabled },
+		func(cfg types.AppConfig) bool { return a.deviceManager.SetGearLight(cfg.GearLight) },
 		"enabled", enabled,
 	)
 }
@@ -1068,6 +1100,7 @@ func (a *CoreApp) SetPowerOnStart(enabled bool) bool {
 		"power_on_start",
 		func() bool { return a.deviceManager.SetPowerOnStart(enabled) },
 		func(cfg *types.AppConfig) { cfg.PowerOnStart = enabled },
+		func(cfg types.AppConfig) bool { return a.deviceManager.SetPowerOnStart(cfg.PowerOnStart) },
 		"enabled", enabled,
 	)
 }
@@ -1077,6 +1110,7 @@ func (a *CoreApp) SetSmartStartStop(mode string) bool {
 		"smart_start_stop",
 		func() bool { return a.deviceManager.SetSmartStartStop(mode) },
 		func(cfg *types.AppConfig) { cfg.SmartStartStop = mode },
+		func(cfg types.AppConfig) bool { return a.deviceManager.SetSmartStartStop(cfg.SmartStartStop) },
 		"mode", mode,
 	)
 }
@@ -1086,6 +1120,7 @@ func (a *CoreApp) SetBrightness(percentage int) bool {
 		"brightness",
 		func() bool { return a.deviceManager.SetBrightness(percentage) },
 		func(cfg *types.AppConfig) { cfg.Brightness = percentage },
+		func(cfg types.AppConfig) bool { return a.deviceManager.SetBrightness(cfg.Brightness) },
 		"brightness", percentage,
 	)
 }
@@ -1394,6 +1429,15 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		<-a.stopMonitoring
 	}
 
+	// 排空发生在锁外，可能取走暂停刚写入的信号。重新确认后再决定是否启动。
+	a.mutex.Lock()
+	if a.corePaused || !a.monitoringTemp {
+		a.monitoringTemp = false
+		a.mutex.Unlock()
+		return
+	}
+	a.mutex.Unlock()
+
 	cfg := a.configManager.Get()
 
 	if isConnected && cfg.AutoControl {
@@ -1438,6 +1482,12 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		const maxTempReadFailures = 3
 
 		for {
+			a.mutex.RLock()
+			paused := a.corePaused
+			a.mutex.RUnlock()
+			if paused {
+				return
+			}
 			select {
 			case <-a.stopMonitoring:
 				return
