@@ -777,6 +777,20 @@ func (a *App) SetFanCurve(curve []FanCurvePoint) error {
 	return nil
 }
 
+func (a *App) ResetFanCurve(curve []FanCurvePoint) error {
+	resp, err := a.sendRequest(ipc.ReqResetFanCurve, curve)
+	if err != nil {
+		return err
+	}
+	if resp == nil || !resp.Success {
+		if resp != nil {
+			return fmt.Errorf("%s", resp.Error)
+		}
+		return fmt.Errorf("服务返回为空")
+	}
+	return nil
+}
+
 func (a *App) ResetFanOffset() error {
 	resp, err := a.sendRequest(ipc.ReqResetFanOffset, nil)
 	if err != nil {

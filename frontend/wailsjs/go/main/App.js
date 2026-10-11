@@ -86,6 +86,10 @@ export function QuitApp() {
   return window['go']['main']['App']['QuitApp']();
 }
 
+export function ResetFanCurve(arg1) {
+  return window['go']['main']['App']['ResetFanCurve'](arg1);
+}
+
 export function ResetFanOffset() {
   return window['go']['main']['App']['ResetFanOffset']();
 }

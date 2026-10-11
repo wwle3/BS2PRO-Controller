@@ -880,6 +880,28 @@ func (c *Controller) ResetForCurve(fanCurve []types.FanCurvePoint, reason string
 	c.resetForCurveLocked(fanCurve, reason)
 }
 
+// ClearLearnedCurve 重置转速形状上的长期记忆。
+func (c *Controller) ClearLearnedCurve(fanCurve []types.FanCurvePoint) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.learnedMemory == nil || len(fanCurve) == 0 {
+		return 0
+	}
+	signature := c.curveSignature(fanCurve)
+	temps := c.learnedMemory.DeleteCurve(signature)
+	for _, temp := range temps {
+		c.persistLearnedDeleteLocked(signature, temp)
+	}
+	if len(temps) > 0 {
+		_ = c.flushPersistenceLocked("reset_curve")
+	}
+	c.resetRuntimeStateLocked()
+	if c.logger != nil {
+		c.logger.Info("风扇偏移长期记忆已重置", "curve_signature", signature, "deleted", len(temps))
+	}
+	return len(temps)
+}
+
 // GetCurrentZoneState 返回当前温度所在区间的偏移引擎状态（补偿中/回收中/稳定）
 func (c *Controller) GetCurrentZoneState(temp int, fanCurve []types.FanCurvePoint) string {
 	c.mu.Lock()

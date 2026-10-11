@@ -13,6 +13,7 @@ import {
   GetFanCurveProfileConfigs,
   ImportFanCurveProfilesZip,
   ApplyOffsetToCurve,
+  ResetFanCurve,
   ResetFanOffset,
   SetAutoControl,
   GetAppVersion,
@@ -98,6 +99,10 @@ class ApiService {
 
   async applyOffsetToCurve(): Promise<void> {
     return await ApplyOffsetToCurve();
+  }
+
+  async resetFanCurve(curve: types.FanCurvePoint[]): Promise<void> {
+    return await ResetFanCurve(curve);
   }
 
   async resetFanOffset(): Promise<void> {

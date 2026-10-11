@@ -37,6 +37,21 @@ func (s *learnedMemoryStore) Delete(curveSignature string, zoneTemp int) {
 	delete(s.byKey, learnedMemoryKey{curveSignature: curveSignature, zoneTemp: zoneTemp})
 }
 
+func (s *learnedMemoryStore) DeleteCurve(curveSignature string) []int {
+	if s == nil || curveSignature == "" {
+		return nil
+	}
+	temps := make([]int, 0)
+	for key := range s.byKey {
+		if key.curveSignature != curveSignature {
+			continue
+		}
+		temps = append(temps, key.zoneTemp)
+		delete(s.byKey, key)
+	}
+	return temps
+}
+
 func (s *learnedMemoryStore) Len() int {
 	if s == nil {
 		return 0

@@ -62,6 +62,7 @@ type CoreApp struct {
 	fanCommandShaper *fanCommandShaper
 	// 运行时风扇曲线（含自动偏移学习结果，不直接落盘）
 	runtimeFanCurve []types.FanCurvePoint
+	runtimeCurveGen uint64
 
 	notificationManager   *notification.Manager
 	systemHotkeyConflicts []types.HotkeyConflict
@@ -264,8 +265,24 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) (res ipc.Response) {
 			return a.errorResponse(err.Error())
 		}
 		return a.successResponse(true)
+	case ipc.ReqResetFanCurve:
+		var resetCurve []types.FanCurvePoint
+		if err := json.Unmarshal(req.Data, &resetCurve); err != nil {
+			return a.errorResponse("解析风扇曲线失败: " + err.Error())
+		}
+		if err := a.ResetFanCurve(resetCurve); err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.successResponse(true)
 	case ipc.ReqGetFanCurve:
-		curve := a.visibleFanCurve(a.configManager.Get().FanCurve)
+		cfg := a.configManager.Get()
+		a.mutex.RLock()
+		runtimeEmpty := len(a.runtimeFanCurve) == 0
+		a.mutex.RUnlock()
+		if cfg.FanCurveOffsetEnabled && runtimeEmpty {
+			a.restoreLearnedFanCurve(cfg.FanCurve)
+		}
+		curve := a.visibleFanCurve(cfg.FanCurve)
 		return a.dataResponse(curve)
 	case ipc.ReqNotifyImportCompleted:
 		var params ipc.NotifyProfilesParams
@@ -804,6 +821,14 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 }
 
 func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
+	return a.applyFanCurve(curve, true)
+}
+
+func (a *CoreApp) ResetFanCurve(curve []types.FanCurvePoint) error {
+	return a.applyFanCurve(curve, false)
+}
+
+func (a *CoreApp) applyFanCurve(curve []types.FanCurvePoint, restoreLearned bool) error {
 	a.mutex.Lock()
 	cfg := a.configManager.Get()
 	cfg.FanCurve = cloneFanCurvePoints(curve)
@@ -818,8 +843,12 @@ func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
 	a.clearRuntimeFanCurve()
 	a.fanOffsetCtrl.ResetForCurve(cfg.FanCurve, "set_fan_curve")
 	a.resetFanCommandShaper()
-	if cfg.FanCurveOffsetEnabled {
+	if !restoreLearned {
+		a.fanOffsetCtrl.ClearLearnedCurve(cfg.FanCurve)
+	} else if cfg.FanCurveOffsetEnabled {
 		a.restoreLearnedFanCurve(cfg.FanCurve)
+	}
+	if cfg.FanCurveOffsetEnabled {
 		a.broadcastVisibleFanCurve(cfg.FanCurve)
 	}
 	return nil
@@ -1538,8 +1567,16 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 					var effectiveCurve []types.FanCurvePoint
 					var latestFanData *types.FanData
+					var curveGen uint64
 					if cfg.FanCurveOffsetEnabled {
-						effectiveCurve = a.visibleFanCurve(cfg.FanCurve)
+						a.mutex.RLock()
+						curveGen = a.runtimeCurveGen
+						if len(a.runtimeFanCurve) > 0 {
+							effectiveCurve = cloneFanCurvePoints(a.runtimeFanCurve)
+						} else {
+							effectiveCurve = cloneFanCurvePoints(cfg.FanCurve)
+						}
+						a.mutex.RUnlock()
 					} else {
 						effectiveCurve = cfg.FanCurve
 					}
@@ -1561,7 +1598,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						}
 						changed := a.fanOffsetCtrl.Update(avgTemp, effectiveCurve, 500, deviceMaxRPM)
 						if changed {
-							if a.setRuntimeFanCurve(effectiveCurve) && a.ipcServer != nil {
+							if a.setRuntimeFanCurveIfGen(effectiveCurve, curveGen) && a.ipcServer != nil {
 								go func(base []types.FanCurvePoint) {
 									defer func() { _ = recover() }()
 									a.broadcastVisibleFanCurve(base)

@@ -235,6 +235,7 @@ const localCurve = ref<types.FanCurvePoint[]>([])
 const deviceCurveBaseline = ref<types.FanCurvePoint[]>([])
 const visibleCurve = ref<types.FanCurvePoint[]>([])
 const hasUnsavedChanges = ref(false)
+const resetClearsOffset = ref(false)
 const isSaving = ref(false)
 const isApplyingOffset = ref(false)
 const clickedButton = ref<string | null>(null)
@@ -271,7 +272,7 @@ function ensureCurve(curve: types.FanCurvePoint[]) {
 
 function curvesEqual(a: types.FanCurvePoint[], b: types.FanCurvePoint[]) {
   if (a.length !== b.length) return false
-  return a.every((p, i) => p.temperature === b[i].temperature && p.rpm === b[i].rpm)
+  return a.every((p, i) => p.temperature === b[i].temperature && p.rpm === b[i].rpm && (p.offset || 0) === (b[i].offset || 0))
 }
 
 function getCurrentProfileBaseline() {
@@ -283,7 +284,7 @@ function getCurrentProfileBaseline() {
 }
 
 function refreshUnsavedFlag() {
-  hasUnsavedChanges.value = !curvesEqual(ensureCurve(localCurve.value), ensureCurve(getCurrentProfileBaseline()))
+  hasUnsavedChanges.value = resetClearsOffset.value || !curvesEqual(ensureCurve(localCurve.value), ensureCurve(getCurrentProfileBaseline()))
 }
 
 async function refreshVisibleCurve() {
@@ -328,6 +329,7 @@ async function initProfiles(baseCurve: types.FanCurvePoint[]) {
   localCurve.value = cloneCurve(selected.curve)
   profilesInitialized.value = true
   refreshUnsavedFlag()
+  if (props.config.fanCurveOffsetEnabled) await refreshVisibleCurve()
 }
 
 function updateSelectedProfileCurve() {
@@ -348,6 +350,9 @@ function applySelectedCurve() {
 }
 
 function switchProfile(value: string | number) {
+  const nextId = String(value)
+  if (nextId === selectedProfileId.value) return
+  resetClearsOffset.value = false
   updateSelectedProfileCurve()
   void persistProfiles()
   const target = curveProfiles.value.find(profile => profile.id === String(value))
@@ -361,6 +366,7 @@ function switchProfile(value: string | number) {
 }
 
 function createProfile() {
+  resetClearsOffset.value = false
   updateSelectedProfileCurve()
   const customCount = curveProfiles.value.filter(p => p.id !== DEVICE_PROFILE_ID).length + 1
   const id = `profile-${Date.now()}`
@@ -376,6 +382,7 @@ function createProfile() {
 
 function deleteProfile() {
   if (selectedProfileId.value === DEVICE_PROFILE_ID) return
+  resetClearsOffset.value = false
   curveProfiles.value = curveProfiles.value.filter(profile => profile.id !== selectedProfileId.value)
   selectedProfileId.value = DEVICE_PROFILE_ID
   isRenamingProfile.value = false
@@ -493,10 +500,17 @@ const mainPath = computed(() => {
   if (!localCurve.value.length) return ''
   return smoothPath(localCurve.value.map(p => ({ x: sx(p.temperature), y: sy(p.rpm) })))
 })
+function shownOffset(index: number) {
+  if (!props.config.fanCurveOffsetEnabled || resetClearsOffset.value) return 0
+  const live = visibleCurve.value[index]
+  if (!live || live.temperature !== localCurve.value[index]?.temperature) return 0
+  return live.offset || 0
+}
+
 const offsetPath = computed(() => {
-  if (!localCurve.value.length) return ''
-  return smoothPath(localCurve.value.map(p => {
-    const eff = Math.min(rpmMax.value, Math.max(RPM_MIN, Math.round((p.rpm + (p.offset || 0)) / 100) * 100))
+  if (!localCurve.value.length || !props.config.fanCurveOffsetEnabled) return ''
+  return smoothPath(localCurve.value.map((p, index) => {
+    const eff = Math.min(rpmMax.value, Math.max(RPM_MIN, Math.round((p.rpm + shownOffset(index)) / 100) * 100))
     return { x: sx(p.temperature), y: sy(eff) }
   }))
 })
@@ -509,7 +523,6 @@ watch(() => props.config.fanCurve, (curve) => {
   localCurve.value = c
   void initProfiles(c)
   initialized.value = true
-  if (props.config.fanCurveOffsetEnabled) void refreshVisibleCurve()
 }, { immediate: true })
 
 watch(() => props.config.fanCurve, (curve) => {
@@ -523,15 +536,6 @@ watch(() => props.config.fanCurve, (curve) => {
     localCurve.value = cloneCurve(defaultProfile.curve)
   }
   refreshUnsavedFlag()
-  if (props.config.fanCurveOffsetEnabled) void refreshVisibleCurve()
-}, { deep: true })
-
-watch(visibleCurve, (curve) => {
-  if (!initialized.value || !props.config.fanCurveOffsetEnabled || !curve?.length) return
-  localCurve.value = localCurve.value.map((p, i) => {
-    const cfgOffset = curve[i]?.offset ?? 0
-    return p.offset === cfgOffset ? p : { ...p, offset: cfgOffset }
-  })
 }, { deep: true })
 
 watch(() => props.config.fanCurveOffsetEnabled, (enabled) => {
@@ -567,7 +571,7 @@ function computeHoverSnap(clientX: number, clientY: number): HoverSnap | null {
   const snapPoint = localCurve.value[nearestIdx]
   const snapTemp = snapPoint.temperature
   const baseRpm = snapPoint.rpm
-  const offsetVal = props.config.fanCurveOffsetEnabled ? (snapPoint.offset || 0) : 0
+  const offsetVal = shownOffset(nearestIdx)
   const effectiveRpm = Math.min(rpmMax.value, Math.max(RPM_MIN, Math.round((baseRpm + offsetVal) / 100) * 100))
 
   const containerRect = chartContainer.value.getBoundingClientRect()
@@ -654,19 +658,29 @@ async function saveCurve() {
   if (isSaving.value) return
   try {
     isSaving.value = true
-    await apiService.setFanCurve(localCurve.value)
+    const clearingOffset = resetClearsOffset.value
+    if (clearingOffset) await apiService.resetFanCurve(localCurve.value)
+    else await apiService.setFanCurve(localCurve.value)
+    if (clearingOffset) {
+      visibleCurve.value = cloneCurve(localCurve.value).map(p => types.FanCurvePoint.createFrom({ temperature: p.temperature, rpm: p.rpm, offset: 0 }))
+    }
+    resetClearsOffset.value = false
+    const saved = cloneCurve(localCurve.value).map(p => types.FanCurvePoint.createFrom({ temperature: p.temperature, rpm: p.rpm, offset: 0 }))
+    localCurve.value = saved
     const defaultProfile = curveProfiles.value.find(profile => profile.id === DEVICE_PROFILE_ID)
-    if (defaultProfile) defaultProfile.curve = cloneCurve(localCurve.value)
+    if (defaultProfile) defaultProfile.curve = cloneCurve(saved)
     updateSelectedProfileCurve()
     void persistProfiles()
-    emit('config-change', types.AppConfig.createFrom({ ...props.config, fanCurve: localCurve.value }))
+    emit('config-change', types.AppConfig.createFrom({ ...props.config, fanCurve: saved }))
     refreshUnsavedFlag()
+    if (props.config.fanCurveOffsetEnabled) await refreshVisibleCurve()
   } catch (e) { frontendLogger.error('风扇曲线', '保存风扇曲线失败', e) }
   finally { isSaving.value = false }
 }
 
 async function applyOffsetCurve() {
   if (isApplyingOffset.value) return
+  resetClearsOffset.value = false
   try {
     isApplyingOffset.value = true
     await apiService.applyOffsetToCurve()
@@ -685,27 +699,24 @@ async function applyOffsetCurve() {
 }
 
 function cancelChanges() {
+  resetClearsOffset.value = false
   localCurve.value = cloneCurve(getCurrentProfileBaseline())
   refreshUnsavedFlag()
+  if (props.config.fanCurveOffsetEnabled) void refreshVisibleCurve()
 }
-async function resetCurve() {
+function resetCurve() {
   const m = rpmMax.value
   localCurve.value = [
     { temperature: 30, rpm: 500, offset: 0 }, { temperature: 35, rpm: 1200, offset: 0 },
     { temperature: 40, rpm: 1400, offset: 0 }, { temperature: 45, rpm: 1600, offset: 0 },
-    { temperature: 50, rpm: 1800, offset: 100 }, { temperature: 55, rpm: 2000, offset: 100 },
-    { temperature: 60, rpm: Math.min(2300, m), offset: 100 }, { temperature: 65, rpm: Math.min(2600, m), offset: 200 },
-    { temperature: 70, rpm: Math.min(2900, m), offset: 200 }, { temperature: 75, rpm: Math.min(3200, m), offset: 200 },
-    { temperature: 80, rpm: Math.min(3500, m), offset: 300 }, { temperature: 85, rpm: Math.min(3800, m), offset: 200 },
+    { temperature: 50, rpm: 1800, offset: 0 }, { temperature: 55, rpm: 2000, offset: 0 },
+    { temperature: 60, rpm: Math.min(2300, m), offset: 0 }, { temperature: 65, rpm: Math.min(2600, m), offset: 0 },
+    { temperature: 70, rpm: Math.min(2900, m), offset: 0 }, { temperature: 75, rpm: Math.min(3200, m), offset: 0 },
+    { temperature: 80, rpm: Math.min(3500, m), offset: 0 }, { temperature: 85, rpm: Math.min(3800, m), offset: 0 },
     { temperature: 90, rpm: m, offset: 0 }, { temperature: 95, rpm: m, offset: 0 },
     { temperature: 100, rpm: m, offset: 0 },
   ].map(p => types.FanCurvePoint.createFrom(p))
-  refreshUnsavedFlag()
-  try {
-    await apiService.resetFanOffset()
-  } catch (e) {
-    frontendLogger.error('风扇曲线', '重置偏移失败', e)
-  }
+  resetClearsOffset.value = true
   refreshUnsavedFlag()
 }
 function exportConfig() {
@@ -720,6 +731,7 @@ function exportConfig() {
 function importConfig() {
   apiService.importFanCurveProfilesZip()
     .then(async () => {
+      resetClearsOffset.value = false
       const cfg = await apiService.getConfig()
       emit('config-change', types.AppConfig.createFrom(cfg))
       localCurve.value = cloneCurve(cfg.fanCurve)

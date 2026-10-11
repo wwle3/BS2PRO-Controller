@@ -72,6 +72,7 @@ const (
 	// 风扇偏移
 	ReqApplyOffsetToCurve RequestType = "ApplyOffsetToCurve"
 	ReqResetFanOffset     RequestType = "ResetFanOffset"
+	ReqResetFanCurve      RequestType = "ResetFanCurve"
 
 	// RGB 灯效控制
 	ReqSetRGBMode            RequestType = "SetRGBMode"
@@ -142,7 +143,19 @@ type TriggerHotkeyActionParams struct {
 }
 
 type ClientMeta struct {
-	Role string
+	Role    string
+	writeMu sync.Mutex
+}
+
+func writeFrame(meta *ClientMeta, conn net.Conn, payload []byte) error {
+	if meta != nil {
+		meta.writeMu.Lock()
+		defer meta.writeMu.Unlock()
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	defer func() { _ = conn.SetWriteDeadline(time.Time{}) }()
+	_, err := conn.Write(append(payload, '\n'))
+	return err
 }
 
 func (s *Server) dropClient(conn net.Conn) bool {
@@ -290,8 +303,10 @@ func (s *Server) handleClient(conn net.Conn) {
 			continue
 		}
 
-		_, err = conn.Write(append(respBytes, '\n'))
-		if err != nil {
+		s.mutex.RLock()
+		meta := s.clients[conn]
+		s.mutex.RUnlock()
+		if err = writeFrame(meta, conn, respBytes); err != nil {
 			s.logError("发送 IPC 响应失败", "error", err)
 			return
 		}
@@ -326,18 +341,14 @@ func (s *Server) BroadcastEvent(eventType string, data any) {
 		if meta != nil {
 			role = meta.Role
 		}
-		go func(c net.Conn, clientRole string) {
+		go func(c net.Conn, clientMeta *ClientMeta, clientRole string) {
 			defer func() { _ = recover() }()
-			// 设置写超时：若客户端 Pipe 缓冲区满（GUI 卡死），2 秒后放弃写入，避免 goroutine 永久泄漏。
-			_ = c.SetWriteDeadline(time.Now().Add(2 * time.Second))
-			_, err := c.Write(append(eventBytes, '\n'))
-			_ = c.SetWriteDeadline(time.Time{}) // 写完后清除，不影响后续读 deadline
-			if err != nil {
+			if err := writeFrame(clientMeta, c, eventBytes); err != nil {
 				if s.dropClient(c) {
 					s.logWarn("发送 IPC 事件失败，已移除客户端", "role", clientRole, "event", eventType, "error", err)
 				}
 			}
-		}(conn, role)
+		}(conn, meta, role)
 	}
 }
 
@@ -362,17 +373,14 @@ func (s *Server) BroadcastEventToRole(role, eventType string, data any) {
 		if meta == nil || meta.Role != role {
 			continue
 		}
-		go func(c net.Conn, clientRole string) {
+		go func(c net.Conn, clientMeta *ClientMeta, clientRole string) {
 			defer func() { _ = recover() }()
-			_ = c.SetWriteDeadline(time.Now().Add(2 * time.Second))
-			_, err := c.Write(append(eventBytes, '\n'))
-			_ = c.SetWriteDeadline(time.Time{})
-			if err != nil {
+			if err := writeFrame(clientMeta, c, eventBytes); err != nil {
 				if s.dropClient(c) {
 					s.logWarn("发送定向 IPC 事件失败，已移除客户端", "role", clientRole, "event", eventType, "error", err)
 				}
 			}
-		}(conn, meta.Role)
+		}(conn, meta, meta.Role)
 	}
 }
 
