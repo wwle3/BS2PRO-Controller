@@ -3,9 +3,13 @@ package ipc
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"sync"
@@ -14,6 +18,7 @@ import (
 
 	"github.com/Microsoft/go-winio"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/types"
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -21,6 +26,10 @@ const (
 	PipeName = "BS2PRO-Controller-IPC"
 	// PipePath 命名管道完整路径
 	PipePath = `\\.\pipe\` + PipeName
+
+	// pipeSecurityDescriptor 只放行 SYSTEM、管理员，以及交互用户的读写。
+	pipeSecurityDescriptor = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)"
+	maxIPCFrameBytes       = 1 << 20
 )
 
 // RequestType 请求类型
@@ -58,9 +67,6 @@ const (
 	ReqTestTemperatureReading RequestType = "TestTemperatureReading"
 	ReqTestBridgeProgram      RequestType = "TestBridgeProgram"
 	ReqGetBridgeProgramStatus RequestType = "GetBridgeProgramStatus"
-
-	// 窗口相关
-	ReqQuitApp RequestType = "QuitApp"
 
 	// 调试相关
 	ReqGetDebugInfo RequestType = "GetDebugInfo"
@@ -197,7 +203,7 @@ func NewServer(handler RequestHandler, logger types.Logger) *Server {
 func (s *Server) Start() error {
 	// 创建命名管道监听器
 	cfg := &winio.PipeConfig{
-		SecurityDescriptor: "D:P(A;;GA;;;WD)", // 允许所有用户访问
+		SecurityDescriptor: pipeSecurityDescriptor,
 	}
 
 	listener, err := winio.ListenPipe(PipePath, cfg)
@@ -232,9 +238,17 @@ func (s *Server) acceptConnections() {
 			return
 		}
 
+		role, err := authorizePipeClient(conn)
+		if err != nil {
+			s.logWarn("拒绝 IPC 连接", "error", err)
+			_ = conn.Close()
+			continue
+		}
+
 		s.mutex.Lock()
-		s.clients[conn] = &ClientMeta{}
+		s.clients[conn] = &ClientMeta{Role: role}
 		s.mutex.Unlock()
+		s.logInfo("IPC 客户端已允许", "role", role)
 
 		go s.handleClient(conn)
 	}
@@ -260,7 +274,7 @@ func (s *Server) handleClient(conn net.Conn) {
 		// 设置读取deadline若客户端 30 秒内无任何数据（包括心跳），
 		// 视为僵尸连接，主动断开以释放 goroutine 和连接槽位。
 		_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-		line, err := reader.ReadBytes('\n')
+		line, err := readIPCFrame(reader)
 		if err != nil {
 			if s.running.Load() {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -281,17 +295,6 @@ func (s *Server) handleClient(conn net.Conn) {
 		if err := json.Unmarshal(line, &req); err != nil {
 			s.logError("解析 IPC 请求失败", "error", err)
 			continue
-		}
-		if req.Type == ReqRegisterClient {
-			var params RegisterClientParams
-			if err := json.Unmarshal(req.Data, &params); err == nil {
-				s.mutex.Lock()
-				if meta, ok := s.clients[conn]; ok && meta != nil {
-					meta.Role = params.Role
-				}
-				s.mutex.Unlock()
-				s.logInfo("IPC 客户端角色已注册", "role", params.Role)
-			}
 		}
 		resp := s.handler(req)
 		resp.IsResponse = true
@@ -444,6 +447,121 @@ func (s *Server) logWarn(msg any, args ...any) {
 	}
 }
 
+func readIPCFrame(r *bufio.Reader) ([]byte, error) {
+	var buf bytes.Buffer
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if len(chunk) > 0 {
+			if buf.Len()+len(chunk) > maxIPCFrameBytes {
+				return nil, fmt.Errorf("IPC 帧超过 %d 字节", maxIPCFrameBytes)
+			}
+			buf.Write(chunk)
+		}
+		if err == nil {
+			return buf.Bytes(), nil
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		return nil, err
+	}
+}
+
+func authorizePipeClient(conn net.Conn) (string, error) {
+	withFD, ok := conn.(interface{ Fd() uintptr })
+	if !ok {
+		return "", fmt.Errorf("IPC 连接不提供句柄")
+	}
+	var pid uint32
+	if err := windows.GetNamedPipeClientProcessId(windows.Handle(withFD.Fd()), &pid); err != nil {
+		return "", fmt.Errorf("读取 IPC 客户端进程失败: %w", err)
+	}
+	image, err := processImagePath(pid)
+	if err != nil {
+		return "", err
+	}
+	serverExe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("读取服务路径失败: %w", err)
+	}
+	return roleForClientImage(serverExe, image)
+}
+
+func processImagePath(pid uint32) (string, error) {
+	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	if err != nil {
+		return "", fmt.Errorf("打开 IPC 客户端进程失败: %w", err)
+	}
+	defer func() { _ = windows.CloseHandle(handle) }()
+
+	buf := make([]uint16, windows.MAX_PATH)
+	for {
+		n := uint32(len(buf))
+		err = windows.QueryFullProcessImageName(handle, 0, &buf[0], &n)
+		if err == nil {
+			return windows.UTF16ToString(buf[:n]), nil
+		}
+		if err == windows.ERROR_INSUFFICIENT_BUFFER {
+			next := int(n)
+			if next <= len(buf) {
+				next = len(buf) * 2
+			}
+			if next > 32768 {
+				return "", fmt.Errorf("IPC 客户端路径过长")
+			}
+			buf = make([]uint16, next)
+			continue
+		}
+		return "", fmt.Errorf("读取 IPC 客户端路径失败: %w", err)
+	}
+}
+
+// implement: 身份只认服务 exe 同目录下的控制台和 Monitor。这两份进程被注入后仍能发请求。
+func roleForClientImage(serverExe, clientImage string) (string, error) {
+	var name, role string
+	switch strings.ToLower(filepath.Base(clientImage)) {
+	case "bs2pro-controller.exe":
+		name, role = "BS2PRO-Controller.exe", RoleGUI
+	case "bs2pro-monitor.exe":
+		name, role = "BS2PRO-Monitor.exe", RoleMonitorAgent
+	default:
+		return "", fmt.Errorf("拒绝未知 IPC 客户端 %s", clientImage)
+	}
+	expected := filepath.Join(filepath.Dir(serverExe), name)
+	if !sameFilePath(clientImage, expected) {
+		return "", fmt.Errorf("拒绝安装目录之外的 IPC 客户端 %s", clientImage)
+	}
+	return role, nil
+}
+
+func sameFilePath(a, b string) bool {
+	left, errLeft := filepath.Abs(longPath(a))
+	right, errRight := filepath.Abs(longPath(b))
+	if errLeft != nil || errRight != nil {
+		return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+	}
+	return strings.EqualFold(filepath.Clean(left), filepath.Clean(right))
+}
+
+func longPath(path string) string {
+	ptr, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return path
+	}
+	buf := make([]uint16, windows.MAX_PATH)
+	for {
+		n, err := windows.GetLongPathName(ptr, &buf[0], uint32(len(buf)))
+		if err == nil && n > 0 && n < uint32(len(buf)) {
+			return windows.UTF16ToString(buf[:n])
+		}
+		if n > uint32(len(buf)) && n < 32768 {
+			buf = make([]uint16, n)
+			continue
+		}
+		return path
+	}
+}
+
 // Client IPC 客户端
 type Client struct {
 	conn           net.Conn
@@ -539,7 +657,7 @@ func (c *Client) readLoop(gen int64) {
 		reader := c.reader
 		c.connMutex.RUnlock()
 
-		line, err := reader.ReadBytes('\n')
+		line, err := readIPCFrame(reader)
 		if err != nil {
 			// 若已被新连接取代则直接退出
 			if atomic.LoadInt64(&c.connGeneration) != gen {

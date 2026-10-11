@@ -196,21 +196,6 @@ func (a *CoreApp) Stop() {
 	a.logInfo("核心服务已停止")
 }
 
-func (a *CoreApp) onQuitRequest() {
-	a.logInfo("收到前端的彻底退出请求，准备关闭核心服务...")
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent("quit", nil)
-	}
-
-	go func() {
-		defer func() { _ = recover() }()
-		time.Sleep(1 * time.Second)
-		a.Stop() // 释放硬件句柄
-		a.logInfo("核心服务进程自我终止")
-		os.Exit(0) // 正常退出
-	}()
-}
-
 func (a *CoreApp) handleIPCRequest(req ipc.Request) (res ipc.Response) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -411,9 +396,6 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) (res ipc.Response) {
 			status = map[string]interface{}{"running": false, "status": "ASUS ACPI接口未初始化", "type": "none"}
 		}
 		return a.dataResponse(status)
-	case ipc.ReqQuitApp:
-		go a.onQuitRequest()
-		return a.successResponse(true)
 	case ipc.ReqGetDebugInfo:
 		info := a.GetDebugInfo()
 		return a.dataResponse(info)
