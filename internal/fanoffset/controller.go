@@ -1360,23 +1360,6 @@ func (c *Controller) getMinSafeRPM(temp, minRPM, maxRPM int) int {
 	return safeRPM
 }
 
-func iabs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
-func clampInt(v, low, high int) int {
-	if v < low {
-		return low
-	}
-	if v > high {
-		return high
-	}
-	return v
-}
-
 func clampFloat(v, low, high float64) float64 {
 	if v < low {
 		return low

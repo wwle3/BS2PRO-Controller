@@ -199,6 +199,7 @@ import { apiService } from '../services/api'
 import { frontendLogger } from '../services/frontendLogger'
 import { types } from '../../wailsjs/go/models'
 import { DEVICE_PROFILE_ID, type FanCurveProfile, loadCustomProfiles, saveCustomProfiles } from '../services/fanCurveProfiles'
+import { readActiveProfileName, resolveSelectedProfileId, writeActiveProfileName } from '../services/fanCurveProfileSwitch'
 
 interface Props {
   isDark: boolean; isConnected: boolean
@@ -321,14 +322,29 @@ async function initProfiles(baseCurve: types.FanCurvePoint[]) {
   const custom = (await loadCustomProfiles()).map(profile => ({ ...profile, curve: cloneCurve(profile.curve) }))
 
   curveProfiles.value = [defaultProfile, ...custom]
-  selectedProfileId.value = DEVICE_PROFILE_ID
+  const selectedId = resolveSelectedProfileId(curveProfiles.value, readActiveProfileName(localStorage), DEVICE_PROFILE_ID)
+  const selected = curveProfiles.value.find(profile => profile.id === selectedId) || defaultProfile
+  selectedProfileId.value = selected.id
+  localCurve.value = cloneCurve(selected.curve)
   profilesInitialized.value = true
+  refreshUnsavedFlag()
 }
 
 function updateSelectedProfileCurve() {
   const target = curveProfiles.value.find(profile => profile.id === selectedProfileId.value)
   if (!target) return
   target.curve = cloneCurve(localCurve.value)
+}
+
+function applySelectedCurve() {
+  const curve = cloneCurve(localCurve.value)
+  const name = curveProfiles.value.find(profile => profile.id === selectedProfileId.value)?.name || ''
+  void apiService.setFanCurve(curve).then(() => {
+    if (name) writeActiveProfileName(localStorage, name)
+    emit('config-change', types.AppConfig.createFrom({ ...props.config, fanCurve: curve }))
+  }).catch((e) => {
+    frontendLogger.error('风扇曲线', '切换配置失败', e)
+  })
 }
 
 function switchProfile(value: string | number) {
@@ -341,6 +357,7 @@ function switchProfile(value: string | number) {
   isRenamingProfile.value = false
   renameValue.value = ''
   refreshUnsavedFlag()
+  applySelectedCurve()
 }
 
 function createProfile() {
@@ -354,6 +371,7 @@ function createProfile() {
   localCurve.value = cloneCurve(curve)
   void persistProfiles()
   refreshUnsavedFlag()
+  applySelectedCurve()
 }
 
 function deleteProfile() {
@@ -366,6 +384,7 @@ function deleteProfile() {
   if (defaultProfile) localCurve.value = cloneCurve(defaultProfile.curve)
   void persistProfiles()
   refreshUnsavedFlag()
+  applySelectedCurve()
 }
 
 const selectedProfile = computed(() =>
@@ -392,6 +411,7 @@ function submitRenameProfile() {
   const target = curveProfiles.value.find(profile => profile.id === selectedProfileId.value)
   if (!target) return
   target.name = name.slice(0, 20)
+  writeActiveProfileName(localStorage, target.name)
   isRenamingProfile.value = false
   renameValue.value = ''
   void persistProfiles()
@@ -710,6 +730,7 @@ function importConfig() {
         ...custom.map((p) => ({ ...p, curve: cloneCurve(p.curve) })),
       ]
       selectedProfileId.value = DEVICE_PROFILE_ID
+      writeActiveProfileName(localStorage, '默认配置')
       refreshUnsavedFlag()
     })
     .catch((e) => {
