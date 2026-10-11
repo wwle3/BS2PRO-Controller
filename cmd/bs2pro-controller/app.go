@@ -49,6 +49,7 @@ type App struct {
 	registerGUIRoleRunning      atomic.Bool
 	registeredGUIRoleGeneration atomic.Int64
 	showWindowInFlight          atomic.Bool
+	guiExit                     chan struct{}
 
 	// 自启动管理器，启动时初始化一次
 	autostartManager *autostart.Manager
@@ -137,6 +138,7 @@ func NewApp(icon []byte) *App {
 		currentTemp:   types.TemperatureData{BridgeOk: true},
 		iconData:      icon,
 		windowVisible: true,
+		guiExit:       make(chan struct{}),
 	}
 }
 
@@ -398,9 +400,29 @@ func (a *App) ensureMonitorAgentRunningIfNeeded() {
 }
 
 func (a *App) OnWindowClosing(ctx context.Context) bool {
-	a.saveWindowSize(ctx)
+	if a.ipcClient != nil && a.ipcClient.IsConnected() {
+		a.saveWindowSize(ctx)
+	}
+	a.notifyGUIExit()
 	logInfo("窗口关闭，直接退出 GUI 进程")
 	return false
+}
+
+func (a *App) notifyGUIExit() {
+	select {
+	case <-a.guiExit:
+	default:
+		close(a.guiExit)
+	}
+}
+
+func (a *App) guiExited() bool {
+	select {
+	case <-a.guiExit:
+		return true
+	default:
+		return false
+	}
 }
 
 // handleCoreEvent 处理核心服务推送的事件
@@ -1554,6 +1576,7 @@ func (a *App) QuitApp() {
 	if a.ctx != nil {
 		a.saveWindowSize(a.ctx)
 	}
+	a.notifyGUIExit()
 	if a.ipcClient != nil {
 		a.ipcClient.Close()
 	}
@@ -1773,6 +1796,9 @@ func (a *App) startConnectionHealthCheck() {
 	retryStopped := false
 
 	for {
+		if a.guiExited() {
+			return
+		}
 		a.ensureMonitorAgentRunningIfNeeded()
 
 		if !a.ipcClient.IsConnected() {
@@ -1792,6 +1818,9 @@ func (a *App) startConnectionHealthCheck() {
 			}
 
 			logInfo("健康检查: 检测到核心服务离线，开始重连")
+			if a.guiExited() {
+				return
+			}
 
 			if err := a.ipcClient.Connect(); err == nil {
 				logInfo("健康检查: 核心服务重连成功")
