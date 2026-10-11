@@ -94,7 +94,7 @@ type AppConfig struct {
 	DebugMode               bool             `json:"debugMode"`               // 调试模式
 	GuiMonitoring           bool             `json:"guiMonitoring"`           // GUI监控开关
 	CustomSpeedEnabled      bool             `json:"customSpeedEnabled"`      // 自定义转速开关
-	CustomSpeedRPM          int              `json:"customSpeedRPM"`          // 自定义转速值(无上下限)
+	CustomSpeedRPM          int              `json:"customSpeedRPM"`          // 自定义转速，500–4500 且按 100 取整
 	IgnoreDeviceOnReconnect bool             `json:"ignoreDeviceOnReconnect"` // 断连后忽略设备状态(保持APP配置)
 	FanCurveOffsetEnabled   bool             `json:"fanCurveOffsetEnabled"`   // 风扇曲线偏移开关
 	RGBConfig               *RGBConfig       `json:"rgbConfig"`               // RGB灯效配置
@@ -112,7 +112,25 @@ type AppConfig struct {
 const (
 	DefaultWindowWidth  = 900
 	DefaultWindowHeight = 620
+	CustomSpeedMinRPM   = 500
+	CustomSpeedMaxRPM   = 4500
+	CustomSpeedStepRPM  = 100
 )
+
+// NormalizeCustomSpeedRPM 把自定义转速收到正常档位。非正数原样返回。
+func NormalizeCustomSpeedRPM(rpm int) int {
+	if rpm <= 0 {
+		return rpm
+	}
+	rpm = ((rpm + CustomSpeedStepRPM/2) / CustomSpeedStepRPM) * CustomSpeedStepRPM
+	if rpm < CustomSpeedMinRPM {
+		return CustomSpeedMinRPM
+	}
+	if rpm > CustomSpeedMaxRPM {
+		return CustomSpeedMaxRPM
+	}
+	return rpm
+}
 
 type HotkeyConfig struct {
 	Enabled bool            `json:"enabled"`
@@ -377,6 +395,8 @@ func (c *AppConfig) Repair() {
 	}
 	if c.CustomSpeedRPM <= 0 {
 		c.CustomSpeedRPM = defaultCfg.CustomSpeedRPM
+	} else {
+		c.CustomSpeedRPM = NormalizeCustomSpeedRPM(c.CustomSpeedRPM)
 	}
 	if c.WindowWidth < DefaultWindowWidth || c.WindowHeight < DefaultWindowHeight {
 		c.WindowWidth = defaultCfg.WindowWidth

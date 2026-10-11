@@ -978,8 +978,14 @@ func (a *CoreApp) SetManualGear(gear, level string) bool {
 }
 
 func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
+	if rpm > 0 {
+		rpm = types.NormalizeCustomSpeedRPM(rpm)
+	}
 	a.mutex.Lock()
 	cfg := a.configManager.Get()
+	if cfg.CustomSpeedRPM > 0 {
+		cfg.CustomSpeedRPM = types.NormalizeCustomSpeedRPM(cfg.CustomSpeedRPM)
+	}
 	if enabled {
 		if cfg.AutoControl {
 			cfg.AutoControl = false
@@ -991,7 +997,9 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 			}
 		}
 		cfg.CustomSpeedEnabled = true
-		cfg.CustomSpeedRPM = rpm
+		if rpm > 0 {
+			cfg.CustomSpeedRPM = rpm
+		}
 	} else {
 		cfg.CustomSpeedEnabled = false
 	}

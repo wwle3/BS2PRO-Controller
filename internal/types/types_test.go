@@ -2,6 +2,33 @@ package types
 
 import "testing"
 
+func TestNormalizeCustomSpeedRPM(t *testing.T) {
+	cases := []struct{ in, out int }{
+		{4331, 4300},
+		{4350, 4400},
+		{500, 500},
+		{4500, 4500},
+		{449, 500},
+		{4600, 4500},
+		{0, 0},
+		{2000, 2000},
+	}
+	for _, tc := range cases {
+		if got := NormalizeCustomSpeedRPM(tc.in); got != tc.out {
+			t.Fatalf("NormalizeCustomSpeedRPM(%d)=%d, want %d", tc.in, got, tc.out)
+		}
+	}
+}
+
+func TestRepairSnapsCustomSpeedRPM(t *testing.T) {
+	cfg := GetDefaultConfig(false)
+	cfg.CustomSpeedRPM = 4331
+	cfg.Repair()
+	if cfg.CustomSpeedRPM != 4300 {
+		t.Fatalf("custom speed not snapped: %d", cfg.CustomSpeedRPM)
+	}
+}
+
 func TestRepairKeepsWindowAndTheme(t *testing.T) {
 	cfg := GetDefaultConfig(false)
 	cfg.WindowWidth = 900

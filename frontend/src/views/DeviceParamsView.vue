@@ -125,7 +125,7 @@
         </div>
         <!-- 输入范围提示 -->
         <p v-if="config.customSpeedEnabled" class="text-[10px] text-slate-400">
-          有效范围：500 – 4500 RPM
+          有效范围：500 – 4500 RPM，按 100 取整
           <span v-if="customSpeedInput && !isCustomSpeedInputValid" class="text-rose-500 ml-2">当前输入不可应用</span>
         </p>
       </div>
@@ -174,6 +174,14 @@ const parsedCustomSpeed = computed(() => {
 const isCustomSpeedInputValid = computed(() =>
   Number.isFinite(parsedCustomSpeed.value) && parsedCustomSpeed.value >= 500 && parsedCustomSpeed.value <= 4500
 )
+
+function normalizeCustomSpeed(rpm: number): number {
+  const step = 100
+  let value = Math.round(rpm / step) * step
+  if (value < 500) value = 500
+  if (value > 4500) value = 4500
+  return value
+}
 
 const allSampleOptions = [
   { value: 1, label: '1次 (即时响应)' }, { value: 2, label: '2次 (2秒平均)' },
@@ -236,6 +244,8 @@ async function handleCustomSpeedApply() {
 }
 
 async function handleCustomSpeedApplyWith(enabled: boolean, rpm: number) {
+  rpm = normalizeCustomSpeed(rpm)
+  customSpeedInput.value = String(rpm)
   loadingCustomSpeed.value = true
   try {
     await apiService.setCustomSpeed(enabled, rpm)

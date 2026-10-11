@@ -486,9 +486,9 @@ func (m *Manager) validateAndGetDevice(rpm int, label string) (*hid.Device, bool
 		m.logError("风扇转速设置失败，设备未连接", "label", label, "rpm", rpm)
 		return nil, false
 	}
-	if rpm < 500 || rpm > 4500 {
+	if rpm < types.CustomSpeedMinRPM || rpm > types.CustomSpeedMaxRPM {
 		m.mutex.Unlock()
-		m.logError("风扇转速超出范围", "label", label, "rpm", rpm, "min_rpm", 500, "max_rpm", 4500)
+		m.logError("风扇转速超出范围", "label", label, "rpm", rpm, "min_rpm", types.CustomSpeedMinRPM, "max_rpm", types.CustomSpeedMaxRPM)
 		return nil, false
 	}
 	dev := m.device
@@ -510,6 +510,7 @@ func buildSpeedCmd(rpm int) []byte {
 
 // SetFanSpeed 设置风扇转速（纯数据下发，不再带模式切换）
 func (m *Manager) SetFanSpeed(rpm int) bool {
+	rpm = types.NormalizeCustomSpeedRPM(rpm)
 	dev, ok := m.validateAndGetDevice(rpm, "转速")
 	if !ok {
 		return false
@@ -526,6 +527,7 @@ func (m *Manager) SetFanSpeed(rpm int) bool {
 
 // SetCustomFanSpeed 设置自定义风扇转速（先切换至自动模式再下发转速）
 func (m *Manager) SetCustomFanSpeed(rpm int) bool {
+	rpm = types.NormalizeCustomSpeedRPM(rpm)
 	dev, ok := m.validateAndGetDevice(rpm, "自定义转速")
 	if !ok {
 		return false
