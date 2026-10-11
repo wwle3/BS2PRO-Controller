@@ -45,6 +45,11 @@ if ($LASTEXITCODE -ne 0) {
 
 $env:PATH = "$env:PATH;C:\Program Files (x86)\NSIS\Bin"
 
+$null = New-Item -ItemType Directory -Force -Path 'frontend/out'
+if (-not (Get-ChildItem 'frontend/out' -File -Recurse -Force | Where-Object { $_.Name -notmatch '^[._]' })) {
+    Set-Content -LiteralPath 'frontend/out/index.html' -Value '<!doctype html><title></title>' -Encoding ascii
+}
+
 Write-Host 'Building main application...'
 Push-Location 'cmd/bs2pro-controller'
 try {
