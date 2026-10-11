@@ -10,7 +10,7 @@ Write-Host 'Synchronizing Versions across project...'
 Write-Host 'Building BS2PRO-Controller (DEBUG VERSION)...'
 
 $displayVersion = ''
-$wailsJson = Get-Content -LiteralPath 'wails.json' -Raw
+$wailsJson = Get-Content -LiteralPath 'cmd/bs2pro-controller/wails.json' -Raw
 if ($wailsJson -match '"productVersion"\s*:\s*"([^"]+)"') {
     $displayVersion = $Matches[1]
 }
@@ -36,7 +36,15 @@ if (Test-Path 'cmd/bs2pro-monitor/winres/winres.json') {
 & go build -trimpath -ldflags $monitorLdflags -o 'build/bin/BS2PRO-Monitor.exe' './cmd/bs2pro-monitor/'
 
 Write-Host '[3/3] Building main application (DEBUG)...'
-& wails build -debug -ldflags $wailsLdflags
+Push-Location 'cmd/bs2pro-controller'
+try {
+    & wails build -debug -ldflags $wailsLdflags
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Wails build failed!'
+    }
+} finally {
+    Pop-Location
+}
 
 Write-Host '======================================================='
 Write-Host 'Debug Build completed successfully!'

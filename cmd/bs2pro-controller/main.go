@@ -1,7 +1,6 @@
 package main
 
 import (
-	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,19 +8,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TIANLI0/BS2PRO-Controller/build/windows"
+	"github.com/TIANLI0/BS2PRO-Controller/frontend"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/config"
 	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
+	wailsoptions "github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	wailswindows "github.com/wailsapp/wails/v2/pkg/options/windows"
 	"golang.org/x/sys/windows/registry"
 )
-
-//go:embed all:frontend/out
-var assets embed.FS
-
-//go:embed build/windows/icon.ico
-var iconData []byte
 
 // guiCapturePanic 捕获 GUI 进程异常，写入崩溃文件和日志
 func guiCapturePanic(recovered any) {
@@ -76,7 +71,7 @@ func main() {
 		}
 	}()
 
-	app := NewApp(iconData)
+	app := NewApp(appicon.ICO)
 
 	// 检测是否为开机自启动模式
 	isAutoStart := false
@@ -89,11 +84,11 @@ func main() {
 
 	// 启动 Wails 框架
 	size := loadWindowSize()
-	startState := options.Normal
+	startState := wailsoptions.Normal
 	if size.Maximised {
-		startState = options.Maximised
+		startState = wailsoptions.Maximised
 	}
-	err := wails.Run(&options.App{
+	err := wails.Run(&wailsoptions.App{
 		Title:            "BS2PRO-Controller",
 		Width:            size.Width,
 		Height:           size.Height,
@@ -108,9 +103,9 @@ func main() {
 		StartHidden: isAutoStart,
 
 		// 应用程序单实例锁
-		SingleInstanceLock: &options.SingleInstanceLock{
+		SingleInstanceLock: &wailsoptions.SingleInstanceLock{
 			UniqueId: "BS2PRO-Controller-Unique-Lock-2025",
-			OnSecondInstanceLaunch: func(secondInstanceData options.SecondInstanceData) {
+			OnSecondInstanceLaunch: func(secondInstanceData wailsoptions.SecondInstanceData) {
 				if guiLogger != nil {
 					guiLogger.Info("检测到第二实例启动",
 						"args", secondInstanceData.Args)
@@ -134,7 +129,7 @@ func main() {
 		},
 
 		AssetServer: &assetserver.Options{
-			Assets: assets,
+			Assets: assets.FS,
 		},
 		BackgroundColour: guiBackgroundColour(),
 		OnStartup:        app.startup,
@@ -142,12 +137,12 @@ func main() {
 		Bind: []interface{}{
 			app,
 		},
-		Windows: &windows.Options{
+		Windows: &wailswindows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			DisableWindowIcon:    false,
 			WebviewUserDataPath:  getWebView2DataPath(),
-			Theme:                windows.SystemDefault, // 系统默认主题
+			Theme:                wailswindows.SystemDefault, // 系统默认主题
 		},
 	})
 
@@ -161,18 +156,18 @@ func main() {
 	}
 }
 
-func guiBackgroundColour() *options.RGBA {
+func guiBackgroundColour() *wailsoptions.RGBA {
 	pref := loadThemePreference()
 	if !pref.FollowSystem {
 		if pref.Mode == "dark" {
-			return &options.RGBA{R: 31, G: 31, B: 31, A: 255}
+			return &wailsoptions.RGBA{R: 31, G: 31, B: 31, A: 255}
 		}
-		return &options.RGBA{R: 248, G: 250, B: 252, A: 255}
+		return &wailsoptions.RGBA{R: 248, G: 250, B: 252, A: 255}
 	}
 	if prefersLightTheme() {
-		return &options.RGBA{R: 248, G: 250, B: 252, A: 255}
+		return &wailsoptions.RGBA{R: 248, G: 250, B: 252, A: 255}
 	}
-	return &options.RGBA{R: 31, G: 31, B: 31, A: 255}
+	return &wailsoptions.RGBA{R: 31, G: 31, B: 31, A: 255}
 }
 
 func prefersLightTheme() bool {

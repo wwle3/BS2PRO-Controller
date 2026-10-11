@@ -3,7 +3,7 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 $Utf8Bom = New-Object System.Text.UTF8Encoding $true
 
 # 读取 wails.json 获取基准版本号
-$wailsJson = Get-Content -Raw -Encoding UTF8 'wails.json'
+$wailsJson = Get-Content -Raw -Encoding UTF8 'cmd/bs2pro-controller/wails.json'
 if ($wailsJson -match '"productVersion"\s*:\s*"(.*?)"') {
     $displayVer = $matches[1]
 } else {

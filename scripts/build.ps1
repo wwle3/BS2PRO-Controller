@@ -10,7 +10,7 @@ Write-Host 'Synchronizing Versions across project...'
 Write-Host 'Building BS2PRO-Controller...'
 
 $displayVersion = ''
-$wailsJson = Get-Content -LiteralPath 'wails.json' -Raw
+$wailsJson = Get-Content -LiteralPath 'cmd/bs2pro-controller/wails.json' -Raw
 if ($wailsJson -match '"productVersion"\s*:\s*"([^"]+)"') {
     $displayVersion = $Matches[1]
 }
@@ -46,9 +46,14 @@ if ($LASTEXITCODE -ne 0) {
 $env:PATH = "$env:PATH;C:\Program Files (x86)\NSIS\Bin"
 
 Write-Host 'Building main application...'
-& wails build -nsis -trimpath -webview2 browser -ldflags $wailsLdflags
-if ($LASTEXITCODE -ne 0) {
-    throw 'Wails build failed!'
+Push-Location 'cmd/bs2pro-controller'
+try {
+    & wails build -nsis -trimpath -webview2 browser -ldflags $wailsLdflags
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Wails build failed!'
+    }
+} finally {
+    Pop-Location
 }
 
 if (-not (Test-Path 'build/bin/BS2PRO-CoreService.exe')) {

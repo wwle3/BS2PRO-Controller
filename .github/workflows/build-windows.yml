@@ -83,7 +83,7 @@ jobs:
         id: meta
         shell: pwsh
         run: |
-          $wails = Get-Content -Raw -Encoding UTF8 "wails.json" | ConvertFrom-Json
+          $wails = Get-Content -Raw -Encoding UTF8 "cmd/bs2pro-controller/wails.json" | ConvertFrom-Json
           $baseVersion = [string]$wails.info.productVersion
           $versionPrefix = $baseVersion -replace '-r\d+$', ''
           $inputBuildType = "${{ github.event.inputs.build_type }}"
@@ -127,7 +127,7 @@ jobs:
       - name: Apply version to wails.json
         shell: pwsh
         run: |
-          $path = "wails.json"
+          $path = "cmd/bs2pro-controller/wails.json"
           $json = Get-Content -Raw -Encoding UTF8 $path | ConvertFrom-Json
           $json.info.productVersion = "${{ steps.meta.outputs.final_version }}"
           $content = $json | ConvertTo-Json -Depth 100
