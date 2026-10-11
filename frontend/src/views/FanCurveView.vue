@@ -347,8 +347,11 @@ function createProfile() {
   updateSelectedProfileCurve()
   const customCount = curveProfiles.value.filter(p => p.id !== DEVICE_PROFILE_ID).length + 1
   const id = `profile-${Date.now()}`
-  curveProfiles.value.push({ id, name: `配置 ${customCount}`, curve: cloneCurve(localCurve.value) })
+  const source = curveProfiles.value.find(profile => profile.id === DEVICE_PROFILE_ID)?.curve
+  const curve = cloneCurve(source?.length ? source : localCurve.value)
+  curveProfiles.value.push({ id, name: `配置 ${customCount}`, curve })
   selectedProfileId.value = id
+  localCurve.value = cloneCurve(curve)
   void persistProfiles()
   refreshUnsavedFlag()
 }
