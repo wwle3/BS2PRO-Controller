@@ -1580,10 +1580,6 @@ func (a *App) QuitApp() {
 	if a.ipcClient != nil {
 		a.ipcClient.Close()
 	}
-	if a.ctx != nil {
-		runtime.Quit(a.ctx)
-	}
-
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		logInfo("控制台已退出")
@@ -1592,6 +1588,9 @@ func (a *App) QuitApp() {
 		}
 		os.Exit(0)
 	}()
+	if a.ctx != nil {
+		runtime.Quit(a.ctx)
+	}
 }
 
 // RestartCoreService 重启核心服务
