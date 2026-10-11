@@ -73,7 +73,6 @@ type zoneState struct {
 	learnedConfidence   float64
 	learnSuccesses      int
 	learnFailures       int
-	memorySeedPending   bool
 	memoryCooldownUntil time.Time
 	memoryFailStreak    int
 }
@@ -266,7 +265,7 @@ func (c *Controller) Update(currentTemp int, fanCurve []types.FanCurvePoint, min
 	zoneIdx := c.findZoneIndex(currentTemp, fanCurve)
 	zone := &c.zones[zoneIdx]
 	point := &fanCurve[zoneIdx]
-	c.noteZoneEntry(zone, point.Temperature)
+	c.noteZoneEntry(point.Temperature)
 
 	// 弹性安全基准线
 	minSafeRPM := c.getMinSafeRPM(currentTemp, minRPM, maxRPM)
@@ -500,16 +499,6 @@ NORMAL_LOGIC:
 			if zone.stableCount >= c.config.ConvergeCount {
 				zone.stableCount = 0
 				zone.probeOffset = point.Offset
-				if zone.memorySeedPending {
-					if c.applyLearnedOffsetMemory(zone, point, currentTemp, trend, minSafeOffset, now, minRPM, maxRPM, true) {
-						break NORMAL_LOGIC
-					}
-					zone.memorySeedPending = false
-				} else if zone.learnedConfidence >= 0.55 && point.Offset > minSafeOffset && !zone.converged {
-					if c.applyLearnedOffsetMemory(zone, point, currentTemp, trend, minSafeOffset, now, minRPM, maxRPM, false) {
-						break NORMAL_LOGIC
-					}
-				}
 
 				if c.handleHighTempProtectionSettle(zone, point, currentTemp, minSafeOffset, minRPM, maxRPM) {
 					break NORMAL_LOGIC
@@ -725,14 +714,10 @@ func (c *Controller) clearLearnState(zone *zoneState, temp int) {
 	c.clearLearnedMemorySuppression(zone)
 }
 
-func (c *Controller) noteZoneEntry(zone *zoneState, zoneTemp int) {
+func (c *Controller) noteZoneEntry(zoneTemp int) {
 	if c.activeZoneValid && c.activeZoneTemp == zoneTemp {
 		return
 	}
-	for i := range c.zones {
-		c.zones[i].memorySeedPending = false
-	}
-	zone.memorySeedPending = true
 	c.activeZoneTemp = zoneTemp
 	c.activeZoneValid = true
 }
@@ -836,6 +821,49 @@ func (c *Controller) startVerifying(zone *zoneState, currentTemp int, now time.T
 	zone.verifyTempLow = currentTemp
 	zone.verifyScoreSum = 0
 	zone.verifySamples = 0
+}
+
+// MaterializeLearnedCurve 按当前曲线基线，把已记住的偏移一次写回所有温度点。
+// 高温保护区不恢复。调用方传入的曲线不会被改动。
+func (c *Controller) MaterializeLearnedCurve(fanCurve []types.FanCurvePoint, minRPM, maxRPM int) ([]types.FanCurvePoint, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.learnedMemory == nil || len(fanCurve) == 0 {
+		return nil, false
+	}
+	out := append([]types.FanCurvePoint(nil), fanCurve...)
+	signature := c.curveSignature(out)
+	changed := false
+	for i := range out {
+		point := &out[i]
+		if point.Temperature >= c.config.HighTempBoostThreshold {
+			continue
+		}
+		learned, ok := c.learnedMemory.Get(signature, point.Temperature)
+		if !ok || !learned.hasSeed || learned.confidence < 0.35 {
+			continue
+		}
+		target := int(math.Round(learned.offset/float64(max(1, c.config.Step)))) * c.config.Step
+		minSafe := c.getMinSafeRPM(point.Temperature, minRPM, maxRPM) - point.RPM
+		if target < minSafe {
+			target = minSafe
+		}
+		if point.Temperature >= c.config.CriticalTemp && target < 0 {
+			target = 0
+		}
+		if target == point.Offset {
+			continue
+		}
+		before := point.Offset
+		c.adjustZoneOffset(point, target-point.Offset, minRPM, maxRPM)
+		if point.Offset != before {
+			changed = true
+		}
+	}
+	if !changed {
+		return nil, false
+	}
+	return out, true
 }
 
 func (c *Controller) Reset() {
@@ -958,111 +986,9 @@ func (c *Controller) describeUpReason(currentTemp, trend, requiredConfirm int) s
 	return reason
 }
 
-func (c *Controller) applyLearnedOffsetMemory(zone *zoneState, point *types.FanCurvePoint, currentTemp, trend, minSafeOffset int, now time.Time, minRPM, maxRPM int, entrySeed bool) bool {
-	if currentTemp >= c.config.HighTempBoostThreshold || point.Temperature >= c.config.HighTempBoostThreshold {
-		return false
-	}
-	if zone.learnedConfidence < 0.35 {
-		return false
-	}
-	if zone.memoryFailStreak >= 2 {
-		return false
-	}
-	if !zone.memoryCooldownUntil.IsZero() && now.Before(zone.memoryCooldownUntil) {
-		return false
-	}
-	targetOffset := int(math.Round(zone.learnedOffset/float64(max(1, c.config.Step)))) * c.config.Step
-	if targetOffset < minSafeOffset {
-		targetOffset = minSafeOffset
-	}
-	if currentTemp >= c.config.CriticalTemp && targetOffset < 0 {
-		targetOffset = 0
-	}
-	delta := targetOffset - point.Offset
-	if iabs(delta) < c.config.Step {
-		return false
-	}
-	if trend >= c.config.StableDelta*2 && delta < 0 {
-		return false
-	}
-	maxNudge := c.config.Step
-	if entrySeed {
-		maxNudge = c.learnedMemoryEntryNudge(zone, point, minSafeOffset)
-	} else if zone.learnedConfidence >= 0.75 {
-		maxNudge = c.config.Step * 2
-	}
-	delta = clampInt(delta, -maxNudge, maxNudge)
-	oldOffset := point.Offset
-	c.adjustZoneOffset(point, delta, minRPM, maxRPM)
-	if point.Offset == oldOffset {
-		return false
-	}
-	if entrySeed && iabs(targetOffset-point.Offset) < c.config.Step {
-		zone.memorySeedPending = false
-	} else if !entrySeed {
-		zone.memorySeedPending = false
-	}
-	zone.lastAdjustAt = now
-	zone.stableCount = 0
-	if c.logger != nil {
-		reason := "learned_memory_seed"
-		if entrySeed {
-			reason += "+entry"
-		} else {
-			reason += "+resume"
-		}
-		if delta > 0 {
-			reason += "+raise"
-		} else {
-			reason += "+lower"
-		}
-		c.logger.Debug("风扇偏移应用长期记忆",
-			"zone_temp", point.Temperature,
-			"has_seed", zone.learnSuccesses > 0,
-			"curve_signature", c.lastCurveSignature,
-			"learned_offset", zone.learnedOffset,
-			"confidence", zone.learnedConfidence,
-			"memory_fail_streak", zone.memoryFailStreak,
-			"old_offset", oldOffset,
-			"new_offset", point.Offset,
-			"reason", reason,
-			"trend", trend,
-			"raw_temp", currentTemp)
-	}
-	return true
-}
-
-func (c *Controller) learnedMemoryEntryNudge(zone *zoneState, point *types.FanCurvePoint, minSafeOffset int) int {
-	maxNudge := c.config.Step * 3
-	if zone.learnedConfidence >= 0.55 {
-		maxNudge = c.config.Step * 5
-	}
-	if zone.learnedConfidence >= 0.75 {
-		maxNudge = c.config.Step * 6
-	}
-	if zone.learnedConfidence >= 0.85 {
-		maxNudge += c.config.Step * 2
-	}
-	targetOffset := int(math.Round(zone.learnedOffset/float64(max(1, c.config.Step)))) * c.config.Step
-	if targetOffset < minSafeOffset {
-		targetOffset = minSafeOffset
-	}
-	availableDrop := point.Offset - targetOffset
-	if availableDrop > 0 && availableDrop < maxNudge {
-		maxNudge = availableDrop
-	}
-	if maxNudge < c.config.Step {
-		return c.config.Step
-	}
-	return maxNudge
-}
-
 func (c *Controller) hasHighTempStagnationPressure(zone *zoneState, currentTemp int) bool {
 	if currentTemp >= c.config.HighTempBoostThreshold {
 		return true
-	}
-	if zone.memorySeedPending {
-		return false
 	}
 	if zone.learnedConfidence >= 0.35 && zone.learnedOffset < 0 {
 		return false
@@ -1147,7 +1073,6 @@ func (c *Controller) suppressLearnedMemory(zone *zoneState, now time.Time) time.
 		now = time.Now()
 	}
 	zone.memoryFailStreak++
-	zone.memorySeedPending = false
 	cooldown := c.learnedMemoryCooldown(zone.memoryFailStreak)
 	until := now.Add(cooldown)
 	if until.After(zone.memoryCooldownUntil) {

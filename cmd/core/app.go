@@ -160,6 +160,10 @@ func (a *CoreApp) Start() error {
 		})
 	}
 
+	if cfg.FanCurveOffsetEnabled {
+		a.restoreLearnedFanCurve(cfg.FanCurve)
+	}
+
 	a.safeGo("delayedConnectDevice", func() {
 		time.Sleep(1 * time.Second)
 		if !a.ConnectDevice() {
@@ -785,6 +789,9 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	} else if offsetChanged {
 		a.resetFanOffsetRuntimeState()
 	}
+	if cfg.FanCurveOffsetEnabled && (curveChanged || offsetChanged) {
+		a.restoreLearnedFanCurve(cfg.FanCurve)
+	}
 	a.setSystemHotkeyConflicts(nil)
 	a.broadcastConfigUpdate(cfg)
 	if curveChanged || offsetChanged {
@@ -811,6 +818,10 @@ func (a *CoreApp) SetFanCurve(curve []types.FanCurvePoint) error {
 	a.clearRuntimeFanCurve()
 	a.fanOffsetCtrl.ResetForCurve(cfg.FanCurve, "set_fan_curve")
 	a.resetFanCommandShaper()
+	if cfg.FanCurveOffsetEnabled {
+		a.restoreLearnedFanCurve(cfg.FanCurve)
+		a.broadcastVisibleFanCurve(cfg.FanCurve)
+	}
 	return nil
 }
 

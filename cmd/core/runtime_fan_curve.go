@@ -45,6 +45,18 @@ func (a *CoreApp) broadcastConfigUpdate(cfg types.AppConfig) {
 	a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 }
 
+func (a *CoreApp) restoreLearnedFanCurve(base []types.FanCurvePoint) {
+	if a == nil || a.fanOffsetCtrl == nil || len(base) == 0 {
+		return
+	}
+	restored, changed := a.fanOffsetCtrl.MaterializeLearnedCurve(base, 500, 4000)
+	if !changed {
+		return
+	}
+	a.setRuntimeFanCurve(restored)
+	a.logInfo("已按长期记忆恢复整条风扇偏移曲线", "points", len(restored))
+}
+
 func (a *CoreApp) broadcastVisibleFanCurve(base []types.FanCurvePoint) {
 	if a.ipcServer == nil {
 		return
