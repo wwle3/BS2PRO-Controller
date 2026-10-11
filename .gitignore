@@ -2,6 +2,7 @@ build/bin
 node_modules
 frontend/out
 frontend/tsconfig.tsbuildinfo
+frontend/package.json.md5
 __pycache__/
 *.exe
 *.syso

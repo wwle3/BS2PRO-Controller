@@ -396,7 +396,6 @@ export namespace types {
 	
 	
 	
-	
 	export class TemperatureData {
 	    cpuTemp: number;
 	    gpuTemp: number;
