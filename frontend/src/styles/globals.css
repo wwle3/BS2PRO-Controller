@@ -299,8 +299,7 @@ button:not(.capsule-switch):not(.no-global-press):not(:disabled):active {
   color: #94a3b8 !important;
 }
 
-/* 窗口恢复后短暂禁用交互，避免悬停状态残留 */
-.disable-hover,
+/* 根节点继续收指针。子元素先退出命中，清掉最小化前留下的 :hover。 */
 .disable-hover * {
   pointer-events: none !important;
 }

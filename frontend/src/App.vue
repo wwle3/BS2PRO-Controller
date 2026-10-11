@@ -241,24 +241,11 @@ const syncThemePreferenceToNative = async () => {
   }
 }
 
-const forceHoverReset = () => {
-  const appRoot = document.getElementById('app') as HTMLElement | null
-  if (appRoot) {
-    const oldDisplay = appRoot.style.display
-    appRoot.style.display = 'none'
-    void appRoot.offsetHeight
-    appRoot.style.display = oldDisplay
-  }
-  window.dispatchEvent(new Event('resize'))
-  document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: -1, clientY: -1 }))
-}
-
 const detachHoverUnlockListeners = () => {
   if (!hoverUnlockHandler) return
   window.removeEventListener('mousemove', hoverUnlockHandler)
   window.removeEventListener('mousedown', hoverUnlockHandler)
   window.removeEventListener('wheel', hoverUnlockHandler)
-  window.removeEventListener('keydown', hoverUnlockHandler)
   hoverUnlockHandler = null
 }
 
@@ -274,23 +261,10 @@ const lockHoverImmediately = () => {
 const clearStickyHover = () => {
   detachHoverUnlockListeners()
   document.documentElement.classList.add('disable-hover')
-  forceHoverReset()
-  requestAnimationFrame(() => {
-    forceHoverReset()
-    requestAnimationFrame(() => releaseHoverLock())
-  })
-
-  hoverUnlockHandler = (e: Event) => {
-    if (e.type === 'mousemove') {
-      const ev = e as MouseEvent
-      if (ev.clientX < 0 || ev.clientY < 0) return
-    }
-    releaseHoverLock()
-  }
+  hoverUnlockHandler = () => releaseHoverLock()
   window.addEventListener('mousemove', hoverUnlockHandler)
   window.addEventListener('mousedown', hoverUnlockHandler)
   window.addEventListener('wheel', hoverUnlockHandler)
-  window.addEventListener('keydown', hoverUnlockHandler)
 }
 
 const onVisibilityChange = () => {
