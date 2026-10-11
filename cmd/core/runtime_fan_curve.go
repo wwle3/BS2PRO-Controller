@@ -5,10 +5,6 @@ import (
 	"github.com/TIANLI0/BS2PRO-Controller/internal/types"
 )
 
-func (a *CoreApp) setRuntimeFanCurve(curve []types.FanCurvePoint) bool {
-	return a.storeRuntimeFanCurve(curve, 0, false)
-}
-
 func (a *CoreApp) setRuntimeFanCurveIfGen(curve []types.FanCurvePoint, gen uint64) bool {
 	return a.storeRuntimeFanCurve(curve, gen, true)
 }
@@ -62,11 +58,16 @@ func (a *CoreApp) restoreLearnedFanCurve(base []types.FanCurvePoint) {
 	if a == nil || a.fanOffsetCtrl == nil || len(base) == 0 {
 		return
 	}
+	a.mutex.RLock()
+	gen := a.runtimeCurveGen
+	a.mutex.RUnlock()
 	restored, changed := a.fanOffsetCtrl.MaterializeLearnedCurve(base, 500, 4000)
 	if !changed {
 		return
 	}
-	a.setRuntimeFanCurve(restored)
+	if !a.setRuntimeFanCurveIfGen(restored, gen) {
+		return
+	}
 	a.logInfo("已按长期记忆恢复整条风扇偏移曲线", "points", len(restored))
 }
 
