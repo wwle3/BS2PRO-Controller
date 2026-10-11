@@ -804,14 +804,6 @@ func (c *Controller) handleVerifying(zoneIdx int, fanCurve []types.FanCurvePoint
 	zone.convergeTmp = currentTemp
 	zone.stableCount = 0
 	c.noteLearnSuccess(point.Temperature, zone, point.Offset)
-	if c.logger != nil {
-		c.logger.Debug("风扇偏移完成收敛",
-			"zone_temp", point.Temperature,
-			"offset", point.Offset,
-			"has_seed", zone.learnSuccesses > 0,
-			"curve_signature", c.lastCurveSignature,
-			"verify_samples", zone.verifySamples)
-	}
 }
 
 func (c *Controller) startVerifying(zone *zoneState, currentTemp int, now time.Time) {

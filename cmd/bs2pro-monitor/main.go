@@ -218,15 +218,16 @@ func initMonitorTray() {
 }
 
 func syncTrayEnabled(enabled bool) {
-	monitorTrayEnabled.Store(enabled)
+	wasEnabled := monitorTrayEnabled.Swap(enabled)
 	if enabled {
 		initMonitorTray()
 		return
 	}
-	if monitorTrayManager != nil && monitorTrayManager.IsInitialized() {
-		monitorInfo("tray disabled by config, quitting tray manager")
-		monitorTrayManager.Quit()
+	if !wasEnabled || monitorTrayManager == nil || !monitorTrayManager.IsInitialized() {
+		return
 	}
+	monitorInfo("tray disabled by config, quitting tray manager")
+	monitorTrayManager.Quit()
 }
 
 func showOrLaunchGUI() {
@@ -564,7 +565,7 @@ func handleEvent(event ipc.Event) {
 	}
 	if event.Type == ipc.EventHotkeyEditMode {
 		var params ipc.SetBoolParams
-		if err := json.Unmarshal(event.Data, &params); err == nil {
+		if err := json.Unmarshal(event.Data, &params); err == nil && hotkeyEditMode != params.Enabled {
 			hotkeyEditMode = params.Enabled
 			monitorInfo("hotkey edit mode changed", "enabled", hotkeyEditMode)
 		}
@@ -608,7 +609,6 @@ func (a *globalHotkeyAgent) Apply(cfg *types.HotkeyConfig, handler func(string))
 		a.handler = handler
 	}
 	if hotkeyConfigEqual(a.current, cfg) {
-		monitorInfo("hotkeys unchanged, skip re-register")
 		return
 	}
 	a.clearLocked()
@@ -656,7 +656,6 @@ func (a *globalHotkeyAgent) Clear() {
 
 func (a *globalHotkeyAgent) clearLocked() {
 	if a.loopStop != nil {
-		monitorInfo("clearing existing global hotkey loop")
 		a.loopStop()
 		a.loopStop = nil
 	}

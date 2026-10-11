@@ -13,6 +13,7 @@ const (
 	fanCommandMaxRPM          = 4000
 	fanCommandResendCooldown  = 1500 * time.Millisecond
 	fanCommandModeRecoveryGap = 4 * time.Second
+	fanCommandLogStepRPM      = 500
 )
 
 type fanCommandPlan struct {
@@ -150,4 +151,14 @@ func absInt(v int) int {
 		return -v
 	}
 	return v
+}
+
+func fanCommandDebugWorthLogging(logged bool, lastRPM int, lastReason string, plan fanCommandPlan) bool {
+	if !logged || plan.ShapeReason != lastReason {
+		return true
+	}
+	if absInt(plan.CommandTargetRPM-lastRPM) >= fanCommandLogStepRPM {
+		return true
+	}
+	return plan.CommandTargetRPM != lastRPM && (plan.CommandTargetRPM <= fanCommandMinRPM || plan.CommandTargetRPM >= fanCommandMaxRPM)
 }

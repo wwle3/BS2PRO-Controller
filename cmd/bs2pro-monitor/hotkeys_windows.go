@@ -87,7 +87,6 @@ func registerGlobalHotkeys(bindings []types.HotkeyBinding, onAction func(string)
 			}
 			ids = append(ids, id)
 			active[id] = binding
-			monitorInfo("global hotkey registered", "id", id, "accelerator", binding.Accelerator, "action", binding.Action, "mods", fmt.Sprintf("0x%X", mods|modNoRepeat), "vk", fmt.Sprintf("0x%X", key))
 		}
 		if len(active) == 0 && len(failures) > 0 {
 			monitorWarn("hotkey registration failed for all bindings", "failures", strings.Join(failures, "; "))

@@ -223,7 +223,6 @@ func (s *Server) acceptConnections() {
 		s.clients[conn] = &ClientMeta{}
 		s.mutex.Unlock()
 
-		s.logDebug("IPC 客户端已连接")
 		go s.handleClient(conn)
 	}
 }
@@ -240,7 +239,6 @@ func (s *Server) handleClient(conn net.Conn) {
 		delete(s.clients, conn)
 		s.mutex.Unlock()
 		_ = conn.Close()
-		s.logDebug("IPC 客户端已断开")
 	}()
 
 	reader := bufio.NewReader(conn)
@@ -256,7 +254,7 @@ func (s *Server) handleClient(conn net.Conn) {
 					s.logDebug("IPC 读取超时", "reason", "client_unresponsive", "timeout", "30s", "error", netErr)
 				} else if strings.Contains(err.Error(), "i/o timeout") {
 					s.logDebug("IPC 读取超时", "reason", "io_timeout", "timeout", "30s", "error", err)
-				} else {
+				} else if !strings.Contains(err.Error(), "EOF") {
 					s.logDebug("IPC 读取失败", "error", err)
 				}
 			}

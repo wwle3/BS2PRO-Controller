@@ -663,11 +663,6 @@ func (a *App) GetDeviceStatus() map[string]any {
 		logWarn("解析设备状态失败，回落为未连接", "error", err)
 		return map[string]any{"connected": false}
 	}
-	logDebug("获取设备状态成功",
-		"connected", status["connected"],
-		"model", status["model"],
-		"product_id", status["productId"],
-		"paused", status["paused"])
 	return status
 }
 

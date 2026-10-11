@@ -127,8 +127,6 @@ func (m *Manager) Save() error {
 	defaultConfigDir := m.GetDefaultConfigDir()
 	defaultConfigPath := filepath.Join(defaultConfigDir, "config.json")
 
-	m.logDebug("保存配置到默认目录", "path", defaultConfigPath, "source", "default")
-
 	// 确保默认配置目录存在
 	if err := os.MkdirAll(defaultConfigDir, 0755); err != nil {
 		m.logError("创建默认配置目录失败", "path", defaultConfigDir, "error", err)
