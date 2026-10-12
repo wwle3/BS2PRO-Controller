@@ -48,10 +48,10 @@
           <div class="space-y-3">
             <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">预设模式</label>
             <div class="grid grid-cols-4 gap-3">
-              <button v-for="mode in ['静音', '标准', '强劲', '超频']" :key="mode"
+              <button v-for="mode in presetGears" :key="mode"
                       @click="handleGearChange(mode)"
                       @mousedown="startButtonAnim(`preset-${mode}`)"
-                      :disabled="!isConnected || config.autoControl || config.customSpeedEnabled"
+                      :disabled="!isConnected || config.autoControl || config.customSpeedEnabled || gearTooHigh(mode)"
                       class="h-12 rounded-2xl font-bold text-xs transition-all flex items-center justify-center space-x-2 border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       :class="[
                         config.manualGear === mode
@@ -65,27 +65,23 @@
           </div>
           <div class="space-y-3">
             <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">强度等级</label>
-            <div class="flex bg-slate-100 dark:bg-white/[0.05] p-1 rounded-2xl w-fit">
-              <button v-for="level in ['低', '中', '高']" :key="level"
-                      @click="handleLevelChange(level)"
-                      :disabled="!isConnected || config.autoControl || config.customSpeedEnabled"
-                      class="px-8 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-40"
-                      :class="config.manualLevel === level
-                        ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
-                        : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'">
-                {{ level }}
-              </button>
+            <div class="flex items-center justify-between gap-4">
+              <div class="flex bg-slate-100 dark:bg-white/[0.05] p-1 rounded-2xl w-fit">
+                <button v-for="level in ['低', '中', '高']" :key="level"
+                        @click="handleLevelChange(level)"
+                        :disabled="!isConnected || config.autoControl || config.customSpeedEnabled || levelTooHigh(config.manualGear || '标准', level)"
+                        class="px-8 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-40"
+                        :class="config.manualLevel === level
+                          ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                          : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'">
+                  {{ level }}
+                </button>
+              </div>
+              <div class="flex items-center space-x-2">
+                <span class="text-xs font-bold text-slate-700 dark:text-slate-300">最大支持挡位</span>
+                <span class="text-xs font-black text-blue-600 dark:text-blue-400">{{ activeGearText }}</span>
+              </div>
             </div>
-          </div>
-        </div>
-        <div class="pt-4 border-t border-slate-50 dark:border-slate-800 flex items-center justify-between">
-          <div class="text-[10px] text-slate-400 flex items-center space-x-2">
-            <CircleAlert :size="14" />
-            <span>{{ config.customSpeedEnabled ? '自定义转速模式已启用' : config.autoControl ? '自动温控开启中，手动挡位已禁用' : '策略更改将实时生效' }}</span>
-          </div>
-          <div class="flex items-center space-x-2">
-            <span class="text-xs font-bold text-slate-700 dark:text-slate-300">当前激活:</span>
-            <span class="text-xs font-black text-blue-600 dark:text-blue-400">{{ maxGearText }}</span>
           </div>
         </div>
       </div>
@@ -112,7 +108,7 @@
             <span class="text-[10px] font-black text-slate-400 dark:text-slate-500">RPM</span>
           </div>
           <button @click="handleCustomSpeedApply" @mousedown="startButtonAnim('custom-apply')"
-                  :disabled="!config.customSpeedEnabled || !isConnected || loadingCustomSpeed || !isCustomSpeedInputValid"
+                  :disabled="!config.customSpeedEnabled || !isConnected || loadingCustomSpeed || !isCustomSpeedInputValid || customSpeedAboveLimit"
                   class="h-11 px-6 rounded-xl font-bold text-xs transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   :class="[
                     config.customSpeedEnabled && isConnected
@@ -135,18 +131,79 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
-import { CircleAlert } from 'lucide-vue-next'
 import LedToggle from '../components/ui/LedToggle.vue'
 import UnifiedSelect from '../components/ui/UnifiedSelect.vue'
 import { apiService } from '../services/api'
 import { frontendLogger } from '../services/frontendLogger'
 import { types } from '../../wailsjs/go/models'
 
-interface Props { isDark: boolean; isConnected: boolean; config: types.AppConfig; fanData: types.FanData | null }
+interface Props {
+  isDark: boolean
+  isConnected: boolean
+  deviceModel?: string
+  deviceProductId?: string
+  config: types.AppConfig
+  fanData: types.FanData | null
+}
 const props = defineProps<Props>()
 const emit = defineEmits<{ 'config-change': [config: types.AppConfig] }>()
 
-const maxGearText = computed(() => props.isConnected ? (props.fanData?.maxGear || '—') : '—')
+const presetGears = ['静音', '标准', '强劲', '超频']
+const levelOrder = ['低', '中', '高']
+const gearSpeeds: Record<string, number[]> = {
+  '静音': [1300, 1700, 1900],
+  '标准': [2100, 2400, 2700],
+  '强劲': [2800, 3000, 3300],
+  '超频': [3500, 3700, 4000],
+}
+
+function rpmLimitForModel(model: string | undefined, productId: string | undefined, supply: number | undefined) {
+  const pid = (productId || '').toLowerCase()
+  let plain = false
+  if (pid.includes('1001')) plain = true
+  else if (!pid.includes('1002')) {
+    plain = (model || '').toUpperCase().replace(/\s+/g, '') === 'BS2'
+  }
+  if (supply === 1) return 2700
+  if (plain) return 3000
+  if (supply === 2) return 3300
+  return 4000
+}
+
+const speedLimit = computed(() => rpmLimitForModel(props.deviceModel, props.deviceProductId, props.fanData?.vbus))
+
+function levelRpm(gear: string, level: string) {
+  const speeds = gearSpeeds[gear]
+  const index = levelOrder.indexOf(level)
+  if (!speeds || index < 0) return Number.POSITIVE_INFINITY
+  return speeds[index]
+}
+
+function levelTooHigh(gear: string, level: string) {
+  return levelRpm(gear, level) > speedLimit.value
+}
+
+function gearTooHigh(gear: string) {
+  return levelOrder.every(level => levelTooHigh(gear, level))
+}
+
+function highestUsableLevel(gear: string) {
+  for (let i = levelOrder.length - 1; i >= 0; i--) {
+    const level = levelOrder[i]
+    if (!levelTooHigh(gear, level)) return level
+  }
+  return ''
+}
+
+const activeGearText = computed(() => {
+  if (!props.isConnected) return '—'
+  for (let i = presetGears.length - 1; i >= 0; i--) {
+    const gear = presetGears[i]
+    const speeds = (gearSpeeds[gear] || []).filter(rpm => rpm <= speedLimit.value)
+    if (speeds.length > 0) return `${gear} ${speeds[speeds.length - 1]}转`
+  }
+  return '—'
+})
 
 const customSpeedInput = ref(String(props.config.customSpeedRPM || 2000))
 const loadingCustomSpeed = ref(false)
@@ -173,6 +230,11 @@ const parsedCustomSpeed = computed(() => {
 })
 const isCustomSpeedInputValid = computed(() =>
   Number.isFinite(parsedCustomSpeed.value) && parsedCustomSpeed.value >= 500 && parsedCustomSpeed.value <= 4500
+)
+const customSpeedAboveLimit = computed(() =>
+  Number.isFinite(parsedCustomSpeed.value) && (
+    parsedCustomSpeed.value > speedLimit.value || normalizeCustomSpeed(parsedCustomSpeed.value) > speedLimit.value
+  )
 )
 
 function normalizeCustomSpeed(rpm: number): number {
@@ -239,12 +301,13 @@ async function handleCustomSpeedToggle() {
 
 async function handleCustomSpeedApply() {
   if (!props.config.customSpeedEnabled || !props.isConnected) return
-  if (!isCustomSpeedInputValid.value) return
+  if (!isCustomSpeedInputValid.value || customSpeedAboveLimit.value) return
   await handleCustomSpeedApplyWith(true, parsedCustomSpeed.value)
 }
 
 async function handleCustomSpeedApplyWith(enabled: boolean, rpm: number) {
   rpm = normalizeCustomSpeed(rpm)
+  if (enabled && rpm > speedLimit.value) return
   customSpeedInput.value = String(rpm)
   loadingCustomSpeed.value = true
   try {
@@ -259,13 +322,17 @@ async function handleCustomSpeedApplyWith(enabled: boolean, rpm: number) {
 
 async function handleGearChange(gear: string) {
   if (!props.isConnected || props.config.autoControl || props.config.customSpeedEnabled) return
+  const level = highestUsableLevel(gear)
+  if (!level) return
   try {
-    await apiService.setManualGear(gear, props.config.manualLevel || '中')
-    emit('config-change', types.AppConfig.createFrom({ ...props.config, manualGear: gear }))
+    await apiService.setManualGear(gear, level)
+    emit('config-change', types.AppConfig.createFrom({ ...props.config, manualGear: gear, manualLevel: level }))
   } catch (e) { frontendLogger.error('设备参数', '切换预设模式失败', e) }
 }
 
 async function handleLevelChange(level: string) {
+  const gear = props.config.manualGear || '标准'
+  if (levelTooHigh(gear, level)) return
   if (!props.isConnected || props.config.autoControl || props.config.customSpeedEnabled) return
   try {
     await apiService.setManualGear(props.config.manualGear || '标准', level)

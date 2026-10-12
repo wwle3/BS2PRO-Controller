@@ -10,64 +10,19 @@ import (
 
 // 风扇数据结构
 type FanData struct {
-	ReportID     uint8  // 报告ID
-	MagicSync    uint16 // 同步头 0x5AA5
-	Command      uint8  // 命令码
-	Status       uint8  // 状态字节
-	GearSettings uint8  // 最高挡位和设置挡位
-	CurrentMode  uint8  // 当前模式
-	Reserved1    uint8  // 预留字节
-	CurrentRPM   uint16 // 风扇实时转速
-	TargetRPM    uint16 // 风扇目标转速
-	MaxGear      uint8  // 最高挡位 (从GearSettings解析)
-	SetGear      uint8  // 设置挡位 (从GearSettings解析)
-}
-
-// 解析挡位设置
-func parseGearSettings(gearByte uint8) (maxGear, setGear string) {
-	maxGearCode := (gearByte >> 4) & 0x0F
-	setGearCode := gearByte & 0x0F
-
-	// 模式映射: 2=标准, 4=强劲, 6=超频
-	maxGearMap := map[uint8]string{
-		0x2: "标准",
-		0x4: "强劲",
-		0x6: "超频",
-	}
-
-	// 挡位映射: 8=静音, A=标准, C=强劲, E=超频
-	setGearMap := map[uint8]string{
-		0x8: "静音",
-		0xA: "标准",
-		0xC: "强劲",
-		0xE: "超频",
-	}
-
-	if val, ok := maxGearMap[maxGearCode]; ok {
-		maxGear = val
-	} else {
-		maxGear = fmt.Sprintf("未知(0x%X)", maxGearCode)
-	}
-
-	if val, ok := setGearMap[setGearCode]; ok {
-		setGear = val
-	} else {
-		setGear = fmt.Sprintf("未知(0x%X)", setGearCode)
-	}
-
-	return
-}
-
-// 解析工作模式
-func parseWorkMode(mode uint8) string {
-	switch mode {
-	case 0x04:
-		return "挡位工作模式"
-	case 0x05:
-		return "自动模式(实时转速)"
-	default:
-		return fmt.Sprintf("未知模式(0x%02X)", mode)
-	}
+	ReportID             uint8  // 报告ID
+	MagicSync            uint16 // 同步头 0x5AA5
+	Command              uint8  // 命令码
+	Status               uint8  // 状态字节
+	GearSettings         uint8  // data[5]，vbus 在 bit5-6
+	CurrentMode          uint8  // data[6]，智能变频、通电自启、智能启停
+	Reserved1            uint8  // 预留字节
+	CurrentRPM           uint16 // 风扇实时转速
+	TargetRPM            uint16 // 风扇目标转速
+	Vbus                 uint8
+	SmartFreq            bool
+	PowerOnAutoStart     bool
+	IntelligentStartStop uint8
 }
 
 // 解析HID数据包
@@ -84,14 +39,20 @@ func parseFanData(data []byte, length int) *FanData {
 		return nil
 	}
 
+	statusByte := data[5]
+	flagByte := data[6]
 	fanData := &FanData{
-		ReportID:     data[0],
-		MagicSync:    magic,
-		Command:      data[3],
-		Status:       data[4],
-		GearSettings: data[5],
-		CurrentMode:  data[6],
-		Reserved1:    data[7],
+		ReportID:             data[0],
+		MagicSync:            magic,
+		Command:              data[3],
+		Status:               data[4],
+		GearSettings:         statusByte,
+		CurrentMode:          flagByte,
+		Reserved1:            data[7],
+		Vbus:                 (statusByte >> 5) & 3,
+		SmartFreq:            flagByte&0x01 != 0,
+		PowerOnAutoStart:     flagByte&0x02 != 0,
+		IntelligentStartStop: (flagByte >> 2) & 3,
 	}
 
 	// 解析转速 (小端序)
@@ -113,11 +74,9 @@ func displayFanData(fanData *FanData) {
 	fmt.Printf("命令码: 0x%02X\n", fanData.Command)
 	fmt.Printf("状态字节: 0x%02X\n", fanData.Status)
 
-	maxGear, setGear := parseGearSettings(fanData.GearSettings)
-	fmt.Printf("挡位设置: 0x%02X (最高挡位: %s, 设置挡位: %s)\n",
-		fanData.GearSettings, maxGear, setGear)
-
-	fmt.Printf("当前模式: %s (0x%02X)\n", parseWorkMode(fanData.CurrentMode), fanData.CurrentMode)
+	fmt.Printf("状态字节 data[5]: 0x%02X，VBUS: %d\n", fanData.GearSettings, fanData.Vbus)
+	fmt.Printf("标志字节 data[6]: 0x%02X，智能变频: %t，通电自启: %t，智能启停: %d\n",
+		fanData.CurrentMode, fanData.SmartFreq, fanData.PowerOnAutoStart, fanData.IntelligentStartStop)
 	fmt.Printf("预留字节: 0x%02X\n", fanData.Reserved1)
 	fmt.Printf("风扇实时转速: %d RPM\n", fanData.CurrentRPM)
 	fmt.Printf("风扇目标转速: %d RPM\n", fanData.TargetRPM)

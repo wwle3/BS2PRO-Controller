@@ -8,12 +8,11 @@ import (
 )
 
 const (
-	fanCommandStepRPM         = 100
-	fanCommandMinRPM          = 500
-	fanCommandMaxRPM          = 4000
-	fanCommandResendCooldown  = 1500 * time.Millisecond
-	fanCommandModeRecoveryGap = 4 * time.Second
-	fanCommandLogStepRPM      = 500
+	fanCommandStepRPM        = 100
+	fanCommandMinRPM         = 500
+	fanCommandMaxRPM         = 4000
+	fanCommandResendCooldown = 1500 * time.Millisecond
+	fanCommandLogStepRPM     = 500
 )
 
 type fanCommandPlan struct {
@@ -31,7 +30,6 @@ type fanCommandShaper struct {
 	lastCommandTargetRPM int
 	lastSentAt           time.Time
 	lastShapeReason      string
-	lastModeRecoveryAt   time.Time
 }
 
 func newFanCommandShaper() *fanCommandShaper {
@@ -79,7 +77,6 @@ func (s *fanCommandShaper) Reset() {
 	s.lastCommandTargetRPM = 0
 	s.lastSentAt = time.Time{}
 	s.lastShapeReason = ""
-	s.lastModeRecoveryAt = time.Time{}
 }
 
 func (s *fanCommandShaper) Plan(now time.Time, thermalTargetRPM int, latestFanData *types.FanData) fanCommandPlan {
@@ -109,9 +106,6 @@ func (s *fanCommandShaper) shouldSendLocked(now time.Time, commandTargetRPM int,
 		return false
 	}
 	if latestFanData != nil {
-		if latestFanData.WorkMode == "挡位工作模式" {
-			return true
-		}
 		if deviceTargetRPM := normalizeFanCommandRPM(int(latestFanData.TargetRPM)); deviceTargetRPM > 0 && absInt(commandTargetRPM-deviceTargetRPM) < fanCommandStepRPM {
 			return false
 		}
@@ -119,16 +113,6 @@ func (s *fanCommandShaper) shouldSendLocked(now time.Time, commandTargetRPM int,
 	if s.lastCommandRPM > 0 && absInt(commandTargetRPM-s.lastCommandRPM) < fanCommandStepRPM && !s.lastSentAt.IsZero() && now.Sub(s.lastSentAt) < fanCommandResendCooldown {
 		return false
 	}
-	return true
-}
-
-func (s *fanCommandShaper) AllowModeRecovery(now time.Time) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.lastModeRecoveryAt.IsZero() && now.Sub(s.lastModeRecoveryAt) < fanCommandModeRecoveryGap {
-		return false
-	}
-	s.lastModeRecoveryAt = now
 	return true
 }
 

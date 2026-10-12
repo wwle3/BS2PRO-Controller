@@ -203,6 +203,8 @@ import { readActiveProfileName, resolveSelectedProfileId, writeActiveProfileName
 
 interface Props {
   isDark: boolean; isConnected: boolean
+  deviceModel?: string
+  deviceProductId?: string
   config: types.AppConfig; fanData: types.FanData | null; temperature: types.TemperatureData | null
 }
 const props = defineProps<Props>()
@@ -210,17 +212,26 @@ const emit = defineEmits<{ 'config-change': [config: types.AppConfig] }>()
 
 // 图表范围常量定义
 const TEMP_MIN = 30, TEMP_MAX = 100
-const RPM_MIN = 500, RPM_MAX_DEFAULT = 4000
+const RPM_MIN = 500
 const PLOT_W = 720, PLOT_H = 300
 const PAD_X = 60, PAD_Y = 40
 const vbW = PLOT_W + PAD_X * 2
 const vbH = PLOT_H + PAD_Y * 2
 
-const rpmMax = computed(() => {
-  const mg = props.fanData?.maxGear
-  if (!mg) return RPM_MAX_DEFAULT
-  return mg.includes('超频') ? 4000 : mg.includes('强劲') ? 3300 : 2700
-})
+function rpmLimitForModel(model: string | undefined, productId: string | undefined, vbus: number | undefined) {
+  const pid = (productId || '').toLowerCase()
+  let plain = false
+  if (pid.includes('1001')) plain = true
+  else if (!pid.includes('1002')) {
+    plain = (model || '').toUpperCase().replace(/\s+/g, '') === 'BS2'
+  }
+  if (vbus === 1) return 2700
+  if (plain) return 3000
+  if (vbus === 2) return 3300
+  return 4000
+}
+
+const rpmMax = computed(() => rpmLimitForModel(props.deviceModel, props.deviceProductId, props.fanData?.vbus))
 const tempLabels = Array.from({ length: (TEMP_MAX - TEMP_MIN) / 5 + 1 }, (_, i) => TEMP_MIN + i * 5)
 const rpmLabels  = computed(() =>
   Array.from({ length: Math.floor((rpmMax.value - RPM_MIN) / 500) + 1 }, (_, i) => RPM_MIN + i * 500)

@@ -100,10 +100,12 @@
           :onSetRGBMode="handleSetRGBMode" />
         <FanCurveView v-else-if="currentView === 'fan-curve'"
           :is-dark="isDark" :is-connected="isConnected"
+          :device-model="deviceModel" :device-product-id="deviceProductId"
           :config="config" :fan-data="fanData" :temperature="temperature"
           @config-change="handleConfigChange" />
         <DeviceParamsView v-else-if="currentView === 'device-params'"
           :is-dark="isDark" :is-connected="isConnected"
+          :device-model="deviceModel" :device-product-id="deviceProductId"
           :config="config"
           :fan-data="fanData"
           @config-change="handleConfigChange" />

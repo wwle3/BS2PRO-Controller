@@ -15,18 +15,19 @@ type FanCurvePoint struct {
 
 // FanData 风扇数据结构
 type FanData struct {
-	ReportID     uint8  `json:"reportId"`
-	MagicSync    uint16 `json:"magicSync"`
-	Command      uint8  `json:"command"`
-	Status       uint8  `json:"status"`
-	GearSettings uint8  `json:"gearSettings"`
-	CurrentMode  uint8  `json:"currentMode"`
-	Reserved1    uint8  `json:"reserved1"`
-	CurrentRPM   uint16 `json:"currentRpm"`
-	TargetRPM    uint16 `json:"targetRpm"`
-	MaxGear      string `json:"maxGear"`
-	SetGear      string `json:"setGear"`
-	WorkMode     string `json:"workMode"`
+	ReportID             uint8  `json:"reportId"`
+	MagicSync            uint16 `json:"magicSync"`
+	Command              uint8  `json:"command"`
+	Status               uint8  `json:"status"`
+	GearSettings         uint8  `json:"gearSettings"`
+	CurrentMode          uint8  `json:"currentMode"`
+	Reserved1            uint8  `json:"reserved1"`
+	CurrentRPM           uint16 `json:"currentRpm"`
+	TargetRPM            uint16 `json:"targetRpm"`
+	Vbus                 uint8  `json:"vbus"`
+	SmartFreq            bool   `json:"smartFreq"`
+	PowerOnAutoStart     bool   `json:"powerOnAutoStart"`
+	IntelligentStartStop uint8  `json:"intelligentStartStop"`
 }
 
 // GearCommand 挡位命令结构

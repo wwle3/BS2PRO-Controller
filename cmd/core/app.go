@@ -34,16 +34,14 @@ type CoreApp struct {
 	logger        *logger.CustomLogger
 	ipcServer     *ipc.Server
 
-	isConnected        bool
-	deviceModel        string
-	deviceProductID    string
-	monitoringTemp     bool
-	userDisconnected   bool
-	corePaused         bool
-	currentTemp        types.TemperatureData
-	lastDeviceMode     string
-	userSetAutoControl bool
-	debugMode          bool
+	isConnected      bool
+	deviceModel      string
+	deviceProductID  string
+	monitoringTemp   bool
+	userDisconnected bool
+	corePaused       bool
+	currentTemp      types.TemperatureData
+	debugMode        bool
 
 	cleanupChan chan bool
 
@@ -116,8 +114,6 @@ func NewCoreApp(debugMode bool) *CoreApp {
 		deviceProductID:    "",
 		monitoringTemp:     false,
 		stopMonitoring:     make(chan bool, 1),
-		lastDeviceMode:     "",
-		userSetAutoControl: false,
 		debugMode:          debugMode,
 		fanOffsetCtrl:      fanOffsetCtrl,
 		fanCommandShaper:   commandShaper,
@@ -468,34 +464,6 @@ func (a *CoreApp) dataResponse(data any) ipc.Response {
 }
 
 func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
-	a.mutex.Lock()
-	cfg := a.configManager.Get()
-	var shouldBroadcastConfig bool
-	var broadcastCfg types.AppConfig
-	if fanData.WorkMode == "挡位工作模式" && cfg.AutoControl && a.lastDeviceMode == "自动模式(实时转速)" && !a.userSetAutoControl && !cfg.IgnoreDeviceOnReconnect && !a.monitoringTemp {
-		a.logInfo("检测到设备从自动模式切换到挡位工作模式，自动关闭智能变频", "previous_mode", a.lastDeviceMode, "mode", fanData.WorkMode)
-		cfg.AutoControl = false
-		if err := a.configManager.Update(cfg); err != nil {
-			a.logError("保存配置失败", "error", err)
-		}
-		shouldBroadcastConfig = true
-		broadcastCfg = cfg
-	} else if fanData.WorkMode == "挡位工作模式" && cfg.AutoControl && a.lastDeviceMode == "自动模式(实时转速)" && !a.userSetAutoControl && !cfg.IgnoreDeviceOnReconnect && a.monitoringTemp {
-		a.logDebug("智能变频监控期间设备临时进入挡位模式")
-	} else if fanData.WorkMode == "挡位工作模式" && cfg.AutoControl && a.lastDeviceMode == "自动模式(实时转速)" && !a.userSetAutoControl && cfg.IgnoreDeviceOnReconnect {
-		a.logInfo("检测到设备模式变化，但已开启断连保持配置模式，保持APP配置不变")
-	}
-
-	a.lastDeviceMode = fanData.WorkMode
-	if a.userSetAutoControl {
-		a.userSetAutoControl = false
-	}
-	a.mutex.Unlock()
-
-	// 在锁外进行广播，避免持锁期间阻塞
-	if shouldBroadcastConfig {
-		a.broadcastConfigUpdate(broadcastCfg)
-	}
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventFanDataUpdate, fanData)
 	}
@@ -506,8 +474,6 @@ func (a *CoreApp) onDeviceDisconnect() {
 	wasConnected := a.isConnected
 	a.isConnected = false
 	userDid := a.userDisconnected
-	// 重置设备模式记录，防止重连窗口期内 onFanDataUpdate 用陈旧的 lastDeviceMode 错误判断
-	a.lastDeviceMode = ""
 	a.mutex.Unlock()
 
 	if wasConnected {
@@ -725,12 +691,11 @@ func (a *CoreApp) DisconnectDevice() {
 	a.isConnected = false
 	a.deviceModel = "BS2PRO"
 	a.deviceProductID = ""
-	a.lastDeviceMode = ""
 	a.mutex.Unlock()
 
 	a.resetFanCommandShaper()
 	if fd := a.deviceManager.GetCurrentFanData(); fd != nil {
-		a.logInfo("DisconnectDevice 前设备状态", "mode", fd.WorkMode, "current_rpm", fd.CurrentRPM, "target_rpm", fd.TargetRPM)
+		a.logInfo("DisconnectDevice 前设备状态", "vbus", fd.Vbus, "current_rpm", fd.CurrentRPM, "target_rpm", fd.TargetRPM)
 	} else {
 		a.logInfo("DisconnectDevice 前设备状态: 无风扇数据")
 	}
@@ -912,9 +877,6 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 		return fmt.Errorf("自定义转速模式下无法开启智能变频")
 	}
 	cfg.AutoControl = enabled
-	if enabled {
-		a.userSetAutoControl = true
-	}
 	shouldStartMonitor := enabled && !a.monitoringTemp && a.isConnected
 	isConnected := a.isConnected
 	err := a.configManager.Update(cfg)
@@ -957,14 +919,10 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 }
 
 func (a *CoreApp) applyCurrentGearSetting() {
-	fanData := a.deviceManager.GetCurrentFanData()
-	if fanData == nil {
-		return
-	}
 	cfg := a.configManager.Get()
-	success := a.deviceManager.SetManualGear(fanData.SetGear, cfg.ManualLevel)
+	success := a.deviceManager.SetManualGear(cfg.ManualGear, cfg.ManualLevel)
 	if !success {
-		a.logError("按当前设备挡位恢复手动挡失败", "gear", fanData.SetGear, "level", cfg.ManualLevel)
+		a.logError("按已保存挡位恢复手动挡失败", "gear", cfg.ManualGear, "level", cfg.ManualLevel)
 	}
 
 	if success && a.isConnected {
@@ -1613,20 +1571,13 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						effectiveCurve = cfg.FanCurve
 					}
 					if cfg.FanCurveOffsetEnabled {
-						// 计算设备最大RPM (根据挡位)
-						deviceMaxRPM := 4000
+						a.mutex.RLock()
+						model := a.deviceModel
+						a.mutex.RUnlock()
+						deviceMaxRPM := rpmLimitForModel(model, 0)
 						if fd := a.deviceManager.GetCurrentFanData(); fd != nil {
 							latestFanData = fd
-							switch fd.MaxGear {
-							case "静音":
-								deviceMaxRPM = 1900
-							case "标准":
-								deviceMaxRPM = 2700
-							case "强劲":
-								deviceMaxRPM = 3300
-							case "超频":
-								deviceMaxRPM = 4000
-							}
+							deviceMaxRPM = rpmLimitForModel(model, fd.Vbus)
 						}
 						changed := a.fanOffsetCtrl.Update(avgTemp, effectiveCurve, 500, deviceMaxRPM)
 						if changed {
@@ -1654,35 +1605,17 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						if latestFanData != nil {
 							rpmError := plan.CommandTargetRPM - int(latestFanData.CurrentRPM)
 							targetGap := int(latestFanData.TargetRPM) - int(latestFanData.CurrentRPM)
-							a.logDebug("智能变频监控计算结果", "thermal_target_rpm", plan.ThermalTargetRPM, "target_rpm", plan.CommandTargetRPM, "shape_reason", plan.ShapeReason, "sent", plan.ShouldSend, "avg_temp", avgTemp, "raw_temp", temp.MaxTemp, "curve_points", len(cfg.FanCurve), "current_rpm", latestFanData.CurrentRPM, "device_target_rpm", latestFanData.TargetRPM, "rpm_error", rpmError, "target_gap", targetGap, "mode", latestFanData.WorkMode, "gear", latestFanData.SetGear)
+							a.logDebug("智能变频监控计算结果", "thermal_target_rpm", plan.ThermalTargetRPM, "target_rpm", plan.CommandTargetRPM, "shape_reason", plan.ShapeReason, "sent", plan.ShouldSend, "avg_temp", avgTemp, "raw_temp", temp.MaxTemp, "curve_points", len(cfg.FanCurve), "current_rpm", latestFanData.CurrentRPM, "device_target_rpm", latestFanData.TargetRPM, "rpm_error", rpmError, "target_gap", targetGap, "vbus", latestFanData.Vbus)
 						} else {
 							a.logDebug("智能变频监控计算结果", "thermal_target_rpm", plan.ThermalTargetRPM, "target_rpm", plan.CommandTargetRPM, "shape_reason", plan.ShapeReason, "sent", plan.ShouldSend, "avg_temp", avgTemp, "raw_temp", temp.MaxTemp, "curve_points", len(cfg.FanCurve), "current_rpm", "unknown")
 						}
 					}
 					if plan.ShouldSend && plan.CommandTargetRPM > 0 {
-						blockedByModeRecovery := false
-						if latestFanData != nil && latestFanData.WorkMode == "挡位工作模式" {
-							if a.fanCommandShaper != nil && !a.fanCommandShaper.AllowModeRecovery(now) {
-								blockedByModeRecovery = true
-								if plan.StateChanged {
-									a.logDebug("智能变频监控等待自动模式恢复节流", "thermal_target_rpm", plan.ThermalTargetRPM, "target_rpm", plan.CommandTargetRPM, "shape_reason", plan.ShapeReason, "avg_temp", avgTemp)
-								}
+						if !a.deviceManager.SetFanSpeed(plan.CommandTargetRPM) {
+							if latestFanData != nil {
+								a.logError("智能变频监控下发风扇转速失败", "thermal_target_rpm", plan.ThermalTargetRPM, "target_rpm", plan.CommandTargetRPM, "shape_reason", plan.ShapeReason, "avg_temp", avgTemp, "vbus", latestFanData.Vbus)
 							} else {
-								a.logDebug("智能变频监控：设备进入手动模式，重新进入自动模式")
-								if err := a.deviceManager.EnterAutoMode(); err == nil {
-									time.Sleep(100 * time.Millisecond)
-								} else {
-									a.logError("智能变频监控恢复自动模式失败", "thermal_target_rpm", plan.ThermalTargetRPM, "target_rpm", plan.CommandTargetRPM, "avg_temp", avgTemp, "error", err)
-								}
-							}
-						}
-						if !blockedByModeRecovery {
-							if !a.deviceManager.SetFanSpeed(plan.CommandTargetRPM) {
-								if latestFanData != nil {
-									a.logError("智能变频监控下发风扇转速失败", "thermal_target_rpm", plan.ThermalTargetRPM, "target_rpm", plan.CommandTargetRPM, "shape_reason", plan.ShapeReason, "avg_temp", avgTemp, "mode", latestFanData.WorkMode, "gear", latestFanData.SetGear)
-								} else {
-									a.logError("智能变频监控下发风扇转速失败", "thermal_target_rpm", plan.ThermalTargetRPM, "target_rpm", plan.CommandTargetRPM, "shape_reason", plan.ShapeReason, "avg_temp", avgTemp)
-								}
+								a.logError("智能变频监控下发风扇转速失败", "thermal_target_rpm", plan.ThermalTargetRPM, "target_rpm", plan.CommandTargetRPM, "shape_reason", plan.ShapeReason, "avg_temp", avgTemp)
 							}
 						}
 					}
@@ -1690,6 +1623,20 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			}
 		}
 	}()
+}
+
+func rpmLimitForModel(model string, vbus uint8) int {
+	plainBS2 := strings.EqualFold(strings.ReplaceAll(model, " ", ""), "BS2")
+	if vbus == 1 {
+		return 2700
+	}
+	if plainBS2 {
+		return 3000
+	}
+	if vbus == 2 {
+		return 3300
+	}
+	return 4000
 }
 
 func (a *CoreApp) startHealthMonitoring() {

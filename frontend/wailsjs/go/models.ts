@@ -367,9 +367,10 @@ export namespace types {
 	    reserved1: number;
 	    currentRpm: number;
 	    targetRpm: number;
-	    maxGear: string;
-	    setGear: string;
-	    workMode: string;
+	    vbus: number;
+	    smartFreq: boolean;
+	    powerOnAutoStart: boolean;
+	    intelligentStartStop: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new FanData(source);
@@ -386,9 +387,10 @@ export namespace types {
 	        this.reserved1 = source["reserved1"];
 	        this.currentRpm = source["currentRpm"];
 	        this.targetRpm = source["targetRpm"];
-	        this.maxGear = source["maxGear"];
-	        this.setGear = source["setGear"];
-	        this.workMode = source["workMode"];
+	        this.vbus = source["vbus"];
+	        this.smartFreq = source["smartFreq"];
+	        this.powerOnAutoStart = source["powerOnAutoStart"];
+	        this.intelligentStartStop = source["intelligentStartStop"];
 	    }
 	}
 	

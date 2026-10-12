@@ -389,14 +389,20 @@ func (m *Manager) parseFanData(data []byte, length int) *types.FanData {
 		return nil
 	}
 
+	statusByte := data[5]
+	flagByte := data[6]
 	fanData := &types.FanData{
-		ReportID:     data[0],
-		MagicSync:    magic,
-		Command:      data[3],
-		Status:       data[4],
-		GearSettings: data[5],
-		CurrentMode:  data[6],
-		Reserved1:    data[7],
+		ReportID:             data[0],
+		MagicSync:            magic,
+		Command:              data[3],
+		Status:               data[4],
+		GearSettings:         statusByte,
+		CurrentMode:          flagByte,
+		Reserved1:            data[7],
+		Vbus:                 (statusByte >> 5) & 3,
+		SmartFreq:            flagByte&0x01 != 0,
+		PowerOnAutoStart:     flagByte&0x02 != 0,
+		IntelligentStartStop: (flagByte >> 2) & 3,
 	}
 
 	if length >= 10 {
@@ -406,43 +412,7 @@ func (m *Manager) parseFanData(data []byte, length int) *types.FanData {
 		fanData.TargetRPM = binary.LittleEndian.Uint16(data[10:12])
 	}
 
-	fanData.MaxGear, fanData.SetGear = m.parseGearSettings(fanData.GearSettings)
-	fanData.WorkMode = m.parseWorkMode(fanData.CurrentMode)
-
 	return fanData
-}
-
-func (m *Manager) parseGearSettings(gearByte uint8) (maxGear, setGear string) {
-	maxGearCode := (gearByte >> 4) & 0x0F
-	setGearCode := gearByte & 0x0F
-
-	maxGearMap := map[uint8]string{0x2: "标准", 0x4: "强劲", 0x6: "超频"}
-	setGearMap := map[uint8]string{0x8: "静音", 0xA: "标准", 0xC: "强劲", 0xE: "超频"}
-
-	if val, ok := maxGearMap[maxGearCode]; ok {
-		maxGear = val
-	} else {
-		maxGear = fmt.Sprintf("未知(0x%X)", maxGearCode)
-	}
-
-	if val, ok := setGearMap[setGearCode]; ok {
-		setGear = val
-	} else {
-		setGear = fmt.Sprintf("未知(0x%X)", setGearCode)
-	}
-
-	return
-}
-
-func (m *Manager) parseWorkMode(mode uint8) string {
-	switch mode {
-	case 0x04, 0x02, 0x06, 0x0A, 0x08, 0x00:
-		return "挡位工作模式"
-	case 0x05, 0x03, 0x07, 0x0B, 0x09, 0x01:
-		return "自动模式(实时转速)"
-	default:
-		return fmt.Sprintf("未知模式(0x%02X)", mode)
-	}
 }
 
 // getDevice 安全地获取已连接的设备引用，未连接时返回 nil。

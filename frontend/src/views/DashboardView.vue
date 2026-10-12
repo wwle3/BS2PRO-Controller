@@ -13,10 +13,10 @@
           <button type="button" :class="{ on: !isSmartFreq }" :disabled="!isConnected" @click="setMode(false)">手动</button>
         </div>
         <div v-if="!isSmartFreq" class="dash-mode absolute top-full right-0 mt-2" :class="{ 'is-offline': !isConnected || config.customSpeedEnabled }">
-          <button v-for="gear in basicGears" :key="gear" type="button"
-                  :class="{ on: config.manualGear === gear }"
-                  :disabled="!isConnected || config.customSpeedEnabled"
-                  @click="setGear(gear)">{{ gear }}</button>
+          <button v-for="(gear, index) in basicGears" :key="gear" type="button"
+                  :class="{ on: config.manualGear === gear, blocked: index >= gearCutoff }"
+                  :disabled="(!isConnected || config.customSpeedEnabled) && index < gearCutoff"
+                  @click="setGear(gear, index)">{{ gear }}</button>
         </div>
       </div>
     </header>
@@ -79,6 +79,17 @@ const props = defineProps<Props>()
 const emit = defineEmits<{ 'update:isSmartFreq': [v: boolean]; 'config-change': [config: types.AppConfig] }>()
 const basicGears = ['静音', '标准', '强劲', '超频']
 
+function unavailableGearIndex(model: string | undefined, productId: string | undefined, supply: number | undefined) {
+  const pid = productId || ''
+  const plain = pid.includes('1001') || (!pid.includes('1002') && (model || '').replace(/ /g, '') === 'BS2')
+  if (plain) return supply === 3 || supply === 2 ? 3 : 2
+  if (supply === 3) return 4
+  if (supply === 2) return 3
+  return 2
+}
+
+const gearCutoff = computed(() => unavailableGearIndex(props.deviceModel, props.deviceProductId, props.fanData?.vbus))
+
 const wordmark = computed(() => {
   const pid = (props.deviceProductId || '').toLowerCase()
   let sku = 'BS2 PRO'
@@ -102,14 +113,20 @@ watch(() => props.isSmartFreq, (enabled) => {
   if (!enabled) lastTargetRpm.value = null
 })
 
-const currentGear = computed(() => props.fanData?.setGear || '')
+function rpmLimitForModel(model: string | undefined, productId: string | undefined, vbus: number | undefined) {
+  const pid = (productId || '').toLowerCase()
+  let plain = false
+  if (pid.includes('1001')) plain = true
+  else if (!pid.includes('1002')) {
+    plain = (model || '').toUpperCase().replace(/\s+/g, '') === 'BS2'
+  }
+  if (vbus === 1) return 2700
+  if (plain) return 3000
+  if (vbus === 2) return 3300
+  return 4000
+}
 
-const fanMaxRpm = computed(() => {
-  const t = props.fanData?.maxGear || ''
-  if (t.includes('超频')) return 4000
-  if (t.includes('强劲')) return 3300
-  return 2700
-})
+const fanMaxRpm = computed(() => rpmLimitForModel(props.deviceModel, props.deviceProductId, props.fanData?.vbus))
 
 const rpmText = computed(() => props.isConnected ? String(props.fanData?.currentRpm ?? '—') : '—')
 const cpuText = computed(() => props.isConnected ? String(props.temperature?.cpuTemp ?? '—') : '—')
@@ -143,7 +160,7 @@ const metaParts = computed(() => {
     }
     return parts
   }
-  const gear = currentGear.value || props.config.manualGear || '—'
+  const gear = props.config.manualGear || '—'
   if (gear.includes('超频')) return ['超频']
   const level = props.config.manualLevel || '中'
   return [gear, level]
@@ -154,7 +171,8 @@ function setMode(auto: boolean) {
   emit('update:isSmartFreq', auto)
 }
 
-async function setGear(gear: string) {
+async function setGear(gear: string, index: number) {
+  if (index >= gearCutoff.value) return
   if (!props.isConnected || props.isSmartFreq || props.config.customSpeedEnabled || gear === props.config.manualGear) return
   try {
     await apiService.setManualGear(gear, props.config.manualLevel || '中')
@@ -227,6 +245,11 @@ async function setGear(gear: string) {
   font-weight: 700;
   cursor: pointer;
   color: #94a3b8;
+}
+.dash-mode button.blocked {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: auto;
 }
 .dash-mode button.on {
   background: #fff;
