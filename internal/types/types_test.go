@@ -5,6 +5,38 @@ import (
 	"testing"
 )
 
+func TestDefaultSmartStartStopIsDelayed(t *testing.T) {
+	if got := GetDefaultConfig(false).SmartStartStop; got != "delayed" {
+		t.Fatalf("default smart start stop %q", got)
+	}
+}
+
+func TestRepairKeepsStoredSmartStartStopOff(t *testing.T) {
+	cfg := GetDefaultConfig(false)
+	cfg.SmartStartStop = "off"
+	cfg.Repair()
+	if cfg.SmartStartStop != "off" {
+		t.Fatalf("stored off became %q", cfg.SmartStartStop)
+	}
+	cfg.SmartStartStop = ""
+	cfg.Repair()
+	if cfg.SmartStartStop != "delayed" {
+		t.Fatalf("empty smart start stop became %q", cfg.SmartStartStop)
+	}
+}
+
+func TestStartStopModeName(t *testing.T) {
+	for raw, want := range map[uint8]string{0: "off", 1: "immediate", 2: "delayed"} {
+		got, ok := StartStopModeName(raw)
+		if !ok || got != want {
+			t.Fatalf("raw %d => %q ok %t", raw, got, ok)
+		}
+	}
+	if got, ok := StartStopModeName(3); ok || got != "" {
+		t.Fatalf("raw 3 treated as %q", got)
+	}
+}
+
 func legacyProCommand(gear byte, rpm int, sum byte) []byte {
 	cmd := make([]byte, 23)
 	cmd[0], cmd[1], cmd[2], cmd[3] = 0x5a, 0xa5, 0x26, 0x05

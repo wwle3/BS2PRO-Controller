@@ -114,6 +114,7 @@
           :follow-system-theme="followSystemTheme"
           :core-paused="corePaused"
           :config="config"
+          :fan-data="fanData"
           @config-change="handleConfigChange"
           @core-paused-change="handleCorePausedChange"
           @follow-system-theme-change="handleFollowSystemThemeChange" />

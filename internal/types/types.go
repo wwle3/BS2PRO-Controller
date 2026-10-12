@@ -30,6 +30,20 @@ type FanData struct {
 	IntelligentStartStop uint8  `json:"intelligentStartStop"`
 }
 
+// StartStopModeName 把心跳 data[6] 的 bit2-3 译成启停档。3 以及其他值不是档。
+func StartStopModeName(raw uint8) (string, bool) {
+	switch raw {
+	case 0:
+		return "off", true
+	case 1:
+		return "immediate", true
+	case 2:
+		return "delayed", true
+	default:
+		return "", false
+	}
+}
+
 // GearCommand 挡位命令结构
 type GearCommand struct {
 	Name    string `json:"name"`    // 挡位名称
@@ -82,7 +96,7 @@ type AppConfig struct {
 	NotificationsEnabled    bool             `json:"notificationsEnabled"`    // 系统通知开关
 	TrayEnabled             bool             `json:"trayEnabled"`             // 托盘菜单开关
 	Hotkeys                 *HotkeyConfig    `json:"hotkeys"`                 // 快捷键配置
-	PowerOnStart            bool             `json:"powerOnStart"`            // 通电自启动
+	PowerOnStart            bool             `json:"powerOnStart"`            // 通电自启
 	WindowsAutoStart        bool             `json:"windowsAutoStart"`        // Windows开机自启动
 	MonitorAutoStart        bool             `json:"monitorAutoStart"`        // Monitor开机自启动
 	SmartStartStop          string           `json:"smartStartStop"`          // 智能启停
@@ -256,7 +270,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		PowerOnStart:            false,
 		WindowsAutoStart:        false,
 		MonitorAutoStart:        false,
-		SmartStartStop:          "off",
+		SmartStartStop:          "delayed",
 		Brightness:              100,
 		TempUpdateRate:          2,
 		TempSampleCount:         1,

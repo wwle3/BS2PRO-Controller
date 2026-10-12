@@ -41,15 +41,14 @@
                      :disabled="!isConnected" :loading="loading.gearLight" />
         <div class="h-px bg-slate-50 dark:bg-white/6 mx-6" />
         <SettingItem title="通电自启动" desc="硬件设备上电后自动进入工作状态"
-                     :active="config.powerOnStart" @toggle="handlePowerOnStart"
+                     :active="powerOnShown" @toggle="handlePowerOnStart"
                      :disabled="!isConnected" :loading="loading.powerOnStart" />
         <div class="h-px bg-slate-50 dark:bg-white/6 mx-6" />
         <div class="p-6 flex items-center justify-between">
           <div class="space-y-1">
             <h3 class="text-sm font-bold text-slate-700 dark:text-slate-300">智能启停策略</h3>
-            <p class="text-xs text-slate-400">检测到负载降低时的风扇停转逻辑</p>
           </div>
-          <UnifiedSelect :model-value="config.smartStartStop || 'delayed'"
+          <UnifiedSelect :model-value="smartStartStopShown"
                          @update:model-value="handleSmartStartStop(String($event))"
                          :options="smartStartStopOptions"
                          :disabled="!isConnected"
@@ -170,7 +169,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { Terminal } from 'lucide-vue-next'
 import InlineAlertDialog from '../components/ui/InlineAlertDialog.vue'
 import SettingItem from '../components/ui/SettingItem.vue'
@@ -185,6 +184,7 @@ interface Props {
   followSystemTheme: boolean
   corePaused: boolean
   config: types.AppConfig
+  fanData: types.FanData | null
 }
 const props = defineProps<Props>()
 const emit = defineEmits<{ 'config-change': [config: types.AppConfig], 'follow-system-theme-change': [enabled: boolean], 'core-paused-change': [paused: boolean] }>()
@@ -258,9 +258,52 @@ const globalActionOptions = customGlobalActionPresets.map((item) => ({
 }))
 const smartStartStopOptions = [
   { value: 'off', label: '关闭' },
-  { value: 'immediate', label: '即时' },
-  { value: 'delayed', label: '延时' },
+  { value: 'immediate', label: '即时运行' },
+  { value: 'delayed', label: '延迟运行' },
 ]
+
+const pendingPowerOn = ref<boolean | null>(null)
+const pendingStartStop = ref<string | null>(null)
+const powerOnAnchor = ref<types.FanData | null>(null)
+const startStopAnchor = ref<types.FanData | null>(null)
+const heartbeatReady = computed(() => props.isConnected && props.fanData != null)
+
+function startStopFromHeartbeat(raw: number | undefined) {
+  if (raw === 0) return 'off'
+  if (raw === 1) return 'immediate'
+  if (raw === 2) return 'delayed'
+  return null
+}
+
+watch(() => props.fanData, (frame) => {
+  if (!props.isConnected || frame == null) {
+    pendingPowerOn.value = null
+    pendingStartStop.value = null
+    powerOnAnchor.value = null
+    startStopAnchor.value = null
+    return
+  }
+  if (pendingPowerOn.value !== null && frame !== powerOnAnchor.value && !!frame.powerOnAutoStart === pendingPowerOn.value) {
+    pendingPowerOn.value = null
+    powerOnAnchor.value = null
+  }
+  const mode = startStopFromHeartbeat(frame.intelligentStartStop)
+  if (pendingStartStop.value !== null && frame !== startStopAnchor.value && mode !== null && mode === pendingStartStop.value) {
+    pendingStartStop.value = null
+    startStopAnchor.value = null
+  }
+})
+
+const powerOnShown = computed(() => {
+  if (!heartbeatReady.value) return !!props.config.powerOnStart
+  if (pendingPowerOn.value !== null) return pendingPowerOn.value
+  return !!props.fanData?.powerOnAutoStart
+})
+const smartStartStopShown = computed(() => {
+  if (!heartbeatReady.value) return props.config.smartStartStop || 'delayed'
+  if (pendingStartStop.value !== null) return pendingStartStop.value
+  return startStopFromHeartbeat(props.fanData?.intelligentStartStop) ?? ''
+})
 
 onMounted(async () => {
   try { appVersion.value = await apiService.getAppVersion() } catch {}
@@ -312,9 +355,14 @@ async function handlePowerOnStart() {
   if (!props.isConnected) return
   loading.value.powerOnStart = true
   try {
-    const ok = await apiService.setPowerOnStart(!props.config.powerOnStart)
-    if (ok) emit('config-change', types.AppConfig.createFrom({ ...props.config, powerOnStart: !props.config.powerOnStart }))
-  } catch (e) { frontendLogger.error('系统设置', '设置通电自启动失败', e) } finally { loading.value.powerOnStart = false }
+    const next = !powerOnShown.value
+    const ok = await apiService.setPowerOnStart(next)
+    if (ok) {
+      pendingPowerOn.value = next
+      powerOnAnchor.value = props.fanData
+      emit('config-change', types.AppConfig.createFrom({ ...props.config, powerOnStart: next }))
+    }
+  } catch (e) { frontendLogger.error('系统设置', '设置通电自启失败', e) } finally { loading.value.powerOnStart = false }
 }
 
 async function handleWindowsAutoStart() {
@@ -538,7 +586,11 @@ async function handleSmartStartStop(mode: string) {
   if (!props.isConnected) return
   try {
     const ok = await apiService.setSmartStartStop(mode)
-    if (ok) emit('config-change', types.AppConfig.createFrom({ ...props.config, smartStartStop: mode }))
+    if (ok) {
+      pendingStartStop.value = mode
+      startStopAnchor.value = props.fanData
+      emit('config-change', types.AppConfig.createFrom({ ...props.config, smartStartStop: mode }))
+    }
   } catch (e) { frontendLogger.error('系统设置', '设置智能启停策略失败', e) }
 }
 

@@ -45,8 +45,9 @@ type CoreApp struct {
 
 	cleanupChan chan bool
 
-	mutex          sync.RWMutex
-	stopMonitoring chan bool
+	mutex           sync.RWMutex
+	deviceSettingMu sync.Mutex
+	stopMonitoring  chan bool
 
 	// 记录当前已经下发的 RGB 智能温度档位
 	lastSmartModeLevel byte
@@ -595,18 +596,6 @@ func (a *CoreApp) applyConfigOnConnect() {
 		}
 	}
 
-	if cfg.PowerOnStart {
-		if !a.deviceManager.SetPowerOnStart(true) {
-			a.logError("连接后恢复开机自启设置失败", "enabled", true)
-		}
-	}
-
-	if cfg.SmartStartStop != "" && cfg.SmartStartStop != "off" {
-		if !a.deviceManager.SetSmartStartStop(cfg.SmartStartStop) {
-			a.logError("连接后恢复智能启停设置失败", "mode", cfg.SmartStartStop)
-		}
-	}
-
 	if cfg.Brightness > 0 {
 		if !a.deviceManager.SetBrightness(cfg.Brightness) {
 			a.logError("连接后恢复亮度失败", "brightness", cfg.Brightness)
@@ -1021,8 +1010,10 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 }
 
 func (a *CoreApp) applyDeviceFlag(action string, deviceCall func() bool, updateCfg func(*types.AppConfig), restoreDevice func(types.AppConfig) bool, args ...any) bool {
+	a.deviceSettingMu.Lock()
 	oldCfg := a.configManager.Get()
 	if !deviceCall() {
+		a.deviceSettingMu.Unlock()
 		logArgs := append([]any{"action", action}, args...)
 		a.logError("设备设置下发失败", logArgs...)
 		return false
@@ -1039,8 +1030,10 @@ func (a *CoreApp) applyDeviceFlag(action string, deviceCall func() bool, updateC
 		if !restoreDevice(oldCfg) {
 			a.logError("回滚设备设置失败", append([]any{"action", action}, args...)...)
 		}
+		a.deviceSettingMu.Unlock()
 		return false
 	}
+	a.deviceSettingMu.Unlock()
 	a.broadcastConfigUpdate(cfg)
 	return true
 }
