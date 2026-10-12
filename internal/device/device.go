@@ -26,6 +26,7 @@ const (
 type Manager struct {
 	device         *hid.Device
 	isConnected    bool
+	productID      uint16
 	mutex          sync.RWMutex
 	deviceOpMutex  sync.Mutex // 设备操作互斥锁，确保同一时间只有一个读/写操作
 	logger         types.Logger
@@ -98,6 +99,7 @@ func (m *Manager) Connect() (bool, map[string]string) {
 
 	m.device = device
 	m.isConnected = true
+	m.productID = connectedProductID
 
 	modelName := "BS2PRO"
 	if connectedProductID == ProductID2 {
@@ -150,6 +152,7 @@ func (m *Manager) Disconnect() {
 	m.mutex.Lock()
 
 	if !m.isConnected {
+		m.productID = 0
 		m.mutex.Unlock()
 		return
 	}
@@ -164,6 +167,7 @@ func (m *Manager) Disconnect() {
 	}
 
 	m.isConnected = false
+	m.productID = 0
 	m.mutex.Unlock()
 	m.logInfo("设备连接已断开", "connected", false)
 }
@@ -367,6 +371,7 @@ func (m *Manager) handleDeviceDisconnected() {
 	}
 
 	m.isConnected = false
+	m.productID = 0
 	m.mutex.Unlock()
 
 	m.rgbCtrl.Stop()
@@ -538,11 +543,21 @@ func (m *Manager) EnterAutoMode() error {
 	return err
 }
 
-func (m *Manager) SetManualGear(gear, level string) bool {
-	commands, exists := types.GearCommands[gear]
+func gearModelForProduct(productID uint16) string {
+	if productID == ProductID2 {
+		return "BS2"
+	}
+	return "BS2PRO"
+}
+
+func (m *Manager) manualGearCommand(gear, level string) ([]byte, bool) {
+	m.mutex.RLock()
+	model := gearModelForProduct(m.productID)
+	m.mutex.RUnlock()
+	commands, exists := types.GearPresets(model)[gear]
 	if !exists {
-		m.logError("设置手动挡失败，挡位不支持", "gear", gear, "level", level)
-		return false
+		m.logError("设置手动挡失败，挡位不支持", "gear", gear, "level", level, "model", model)
+		return nil, false
 	}
 	var selectedCommand *types.GearCommand
 	for i := range commands {
@@ -552,10 +567,18 @@ func (m *Manager) SetManualGear(gear, level string) bool {
 		}
 	}
 	if selectedCommand == nil {
-		m.logError("设置手动挡失败，档位级别不支持", "gear", gear, "level", level)
+		m.logError("设置手动挡失败，档位级别不支持", "gear", gear, "level", level, "model", model)
+		return nil, false
+	}
+	return append([]byte{0x02}, selectedCommand.Command...), true
+}
+
+func (m *Manager) SetManualGear(gear, level string) bool {
+	cmd, ok := m.manualGearCommand(gear, level)
+	if !ok {
 		return false
 	}
-	return m.writeCmd(append([]byte{0x02}, selectedCommand.Command...))
+	return m.writeCmd(cmd)
 }
 
 func (m *Manager) SetGearLight(enabled bool) bool {

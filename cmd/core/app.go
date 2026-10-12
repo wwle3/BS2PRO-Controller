@@ -317,8 +317,10 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) (res ipc.Response) {
 		success := a.SetManualGear(params.Gear, params.Level)
 		return a.successResponse(success)
 	case ipc.ReqGetAvailableGears:
-		gears := types.GearCommands
-		return a.dataResponse(gears)
+		a.mutex.RLock()
+		model := a.deviceModel
+		a.mutex.RUnlock()
+		return a.dataResponse(types.GearPresets(model))
 	case ipc.ReqSetCustomSpeed:
 		var params ipc.SetCustomSpeedParams
 		if err := json.Unmarshal(req.Data, &params); err != nil {

@@ -48,7 +48,7 @@
           <div class="space-y-3">
             <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">预设模式</label>
             <div class="grid grid-cols-4 gap-3">
-              <button v-for="mode in presetGears" :key="mode"
+              <button v-for="mode in visiblePresetGears" :key="mode"
                       @click="handleGearChange(mode)"
                       @mousedown="startButtonAnim(`preset-${mode}`)"
                       :disabled="!isConnected || config.autoControl || config.customSpeedEnabled || gearTooHigh(mode)"
@@ -148,13 +148,23 @@ interface Props {
 const props = defineProps<Props>()
 const emit = defineEmits<{ 'config-change': [config: types.AppConfig] }>()
 
-const presetGears = ['静音', '标准', '强劲', '超频']
+const gearOrder = ['静音', '标准', '强劲', '超频']
 const levelOrder = ['低', '中', '高']
-const gearSpeeds: Record<string, number[]> = {
-  '静音': [1300, 1700, 1900],
-  '标准': [2100, 2400, 2700],
-  '强劲': [2800, 3000, 3300],
-  '超频': [3500, 3700, 4000],
+
+function isPlainModel(model: string | undefined, productId: string | undefined) {
+  const pid = (productId || '').toLowerCase()
+  if (pid.includes('1001')) return true
+  if (pid.includes('1002')) return false
+  return (model || '').toUpperCase().replace(/\s+/g, '') === 'BS2'
+}
+
+function gearSpeedsFor(plain: boolean): Record<string, number[]> {
+  return {
+    '静音': [1300, 1700, 1900],
+    '标准': [2100, 2400, 2700],
+    '强劲': plain ? [2800, 2900, 3000] : [2800, 3000, 3300],
+    ...(plain ? {} : { '超频': [3500, 3700, 4000] }),
+  }
 }
 
 function rpmLimitForModel(model: string | undefined, productId: string | undefined, supply: number | undefined) {
@@ -171,9 +181,11 @@ function rpmLimitForModel(model: string | undefined, productId: string | undefin
 }
 
 const speedLimit = computed(() => rpmLimitForModel(props.deviceModel, props.deviceProductId, props.fanData?.vbus))
+const gearSpeeds = computed(() => gearSpeedsFor(isPlainModel(props.deviceModel, props.deviceProductId)))
+const visiblePresetGears = computed(() => gearOrder.filter(gear => (gearSpeeds.value[gear] || []).some(rpm => rpm <= speedLimit.value)))
 
 function levelRpm(gear: string, level: string) {
-  const speeds = gearSpeeds[gear]
+  const speeds = gearSpeeds.value[gear]
   const index = levelOrder.indexOf(level)
   if (!speeds || index < 0) return Number.POSITIVE_INFINITY
   return speeds[index]
@@ -197,9 +209,9 @@ function highestUsableLevel(gear: string) {
 
 const activeGearText = computed(() => {
   if (!props.isConnected) return '—'
-  for (let i = presetGears.length - 1; i >= 0; i--) {
-    const gear = presetGears[i]
-    const speeds = (gearSpeeds[gear] || []).filter(rpm => rpm <= speedLimit.value)
+  for (let i = visiblePresetGears.value.length - 1; i >= 0; i--) {
+    const gear = visiblePresetGears.value[i]
+    const speeds = (gearSpeeds.value[gear] || []).filter(rpm => rpm <= speedLimit.value)
     if (speeds.length > 0) return `${gear} ${speeds[speeds.length - 1]}转`
   }
   return '—'
