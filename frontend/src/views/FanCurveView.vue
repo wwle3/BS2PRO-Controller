@@ -219,7 +219,7 @@ const vbH = PLOT_H + PAD_Y * 2
 const rpmMax = computed(() => {
   const mg = props.fanData?.maxGear
   if (!mg) return RPM_MAX_DEFAULT
-  return mg.includes('超频') ? 4000 : mg.includes('强劲') ? 3300 : 2760
+  return mg.includes('超频') ? 4000 : mg.includes('强劲') ? 3300 : 2700
 })
 const tempLabels = Array.from({ length: (TEMP_MAX - TEMP_MIN) / 5 + 1 }, (_, i) => TEMP_MIN + i * 5)
 const rpmLabels  = computed(() =>

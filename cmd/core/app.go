@@ -1621,7 +1621,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 							case "静音":
 								deviceMaxRPM = 1900
 							case "标准":
-								deviceMaxRPM = 2760
+								deviceMaxRPM = 2700
 							case "强劲":
 								deviceMaxRPM = 3300
 							case "超频":

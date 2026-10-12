@@ -108,7 +108,7 @@ const fanMaxRpm = computed(() => {
   const t = props.fanData?.maxGear || ''
   if (t.includes('超频')) return 4000
   if (t.includes('强劲')) return 3300
-  return 2760
+  return 2700
 })
 
 const rpmText = computed(() => props.isConnected ? String(props.fanData?.currentRpm ?? '—') : '—')
