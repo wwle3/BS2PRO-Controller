@@ -108,7 +108,7 @@
             <span class="text-[10px] font-black text-slate-400 dark:text-slate-500">RPM</span>
           </div>
           <button @click="handleCustomSpeedApply" @mousedown="startButtonAnim('custom-apply')"
-                  :disabled="!config.customSpeedEnabled || !isConnected || loadingCustomSpeed || !isCustomSpeedInputValid || customSpeedAboveLimit"
+                  :disabled="!config.customSpeedEnabled || !isConnected || loadingCustomSpeed || !isCustomSpeedInputValid"
                   class="h-11 px-6 rounded-xl font-bold text-xs transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   :class="[
                     config.customSpeedEnabled && isConnected
@@ -243,11 +243,6 @@ const parsedCustomSpeed = computed(() => {
 const isCustomSpeedInputValid = computed(() =>
   Number.isFinite(parsedCustomSpeed.value) && parsedCustomSpeed.value >= 500 && parsedCustomSpeed.value <= 4500
 )
-const customSpeedAboveLimit = computed(() =>
-  Number.isFinite(parsedCustomSpeed.value) && (
-    parsedCustomSpeed.value > speedLimit.value || normalizeCustomSpeed(parsedCustomSpeed.value) > speedLimit.value
-  )
-)
 
 function normalizeCustomSpeed(rpm: number): number {
   const step = 100
@@ -313,13 +308,12 @@ async function handleCustomSpeedToggle() {
 
 async function handleCustomSpeedApply() {
   if (!props.config.customSpeedEnabled || !props.isConnected) return
-  if (!isCustomSpeedInputValid.value || customSpeedAboveLimit.value) return
+  if (!isCustomSpeedInputValid.value) return
   await handleCustomSpeedApplyWith(true, parsedCustomSpeed.value)
 }
 
 async function handleCustomSpeedApplyWith(enabled: boolean, rpm: number) {
   rpm = normalizeCustomSpeed(rpm)
-  if (enabled && rpm > speedLimit.value) return
   customSpeedInput.value = String(rpm)
   loadingCustomSpeed.value = true
   try {
