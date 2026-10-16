@@ -178,13 +178,13 @@
 
             <!-- 速度控制 -->
             <div v-if="currentModeConfig?.hasSpeed" class="space-y-3">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">循环速度</label>
-              <div class="flex surface-tile p-1.5 rounded-2xl w-fit border">
+              <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">循环速度</label>
+              <div class="flex bg-slate-100 dark:bg-white/[0.05] p-1 rounded-2xl w-fit">
                 <button v-for="s in SPEED_OPTIONS" :key="s.id"
                         @click="setSpeed(s.id)" :disabled="!isConnected"
-                        class="px-8 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        class="px-8 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-40"
                         :class="speed === s.id
-                          ? 'surface-tile text-blue-600 dark:text-blue-400 border border-slate-200/70 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/[0.08]'
+                          ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
                           : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'">
                   {{ s.label }}
                 </button>
